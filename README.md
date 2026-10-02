@@ -4,15 +4,19 @@ Decision support for ambulance crews finding a hospital bed before they arrive â
 guarantee of a bed. Three screens (Nurse, Hospital, Ambulance) share one live backend:
 ranking, holds, offers, and bed counts all flow through `/server`.
 
-## Setup (5 commands)
+## Setup (4 commands)
 
 ```sh
 npm install
 npm run server:install
-cp .env.example .env
 cp server/.env.example server/.env
 npm run server:seed
 ```
+
+The root `.env` is already committed with everything the frontend needs (including the
+`VITE_BEDLINK_*` vars) â€” don't `cp .env.example .env` over it, that would wipe out the
+real Supabase credentials already in there. `.env.example` is only a reference for setting
+up a fresh environment that doesn't have a `.env` yet.
 
 Then:
 
