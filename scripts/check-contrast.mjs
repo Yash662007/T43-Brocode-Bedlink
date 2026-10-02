@@ -1,10 +1,14 @@
 function hexToRgb(hex) {
   const h = hex.replace("#", "");
-  return [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+  return [
+    parseInt(h.substring(0, 2), 16),
+    parseInt(h.substring(2, 4), 16),
+    parseInt(h.substring(4, 6), 16),
+  ];
 }
 
 function luminance(r, g, b) {
-  const a = [r, g, b].map(v => {
+  const a = [r, g, b].map((v) => {
     v /= 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   });
@@ -32,8 +36,16 @@ const pairs = [
   { name: "Light: accent-text-on (#FFFFFF) on accent (#0A5CC7)", fg: "#FFFFFF", bg: "#0A5CC7" },
   { name: "Light: ok text (#0F7B3F) on ok surface (#E6F4EC)", fg: "#0F7B3F", bg: "#E6F4EC" },
   { name: "Light: warn text (#8A5300) on warn surface (#FFF1D6)", fg: "#8A5300", bg: "#FFF1D6" },
-  { name: "Light: danger text (#B42318) on danger surface (#FDECEA)", fg: "#B42318", bg: "#FDECEA" },
-  { name: "Light: unknown text (#566070) on unknown surface (#E9ECF1)", fg: "#566070", bg: "#E9ECF1" },
+  {
+    name: "Light: danger text (#B42318) on danger surface (#FDECEA)",
+    fg: "#B42318",
+    bg: "#FDECEA",
+  },
+  {
+    name: "Light: unknown text (#566070) on unknown surface (#E9ECF1)",
+    fg: "#566070",
+    bg: "#E9ECF1",
+  },
 
   // Dark mode
   { name: "Dark: text (#E8EDF2) on bg (#0E1318)", fg: "#E8EDF2", bg: "#0E1318" },
@@ -46,10 +58,16 @@ const pairs = [
   { name: "Dark: ok text (#4CC38A) on ok surface (#12301F)", fg: "#4CC38A", bg: "#12301F" },
   { name: "Dark: warn text (#F2B24C) on warn surface (#3A2A0C)", fg: "#F2B24C", bg: "#3A2A0C" },
   { name: "Dark: danger text (#FF7A6E) on danger surface (#3C1713)", fg: "#FF7A6E", bg: "#3C1713" },
-  { name: "Dark: unknown text (#9AA6B4) on unknown surface (#232C36)", fg: "#9AA6B4", bg: "#232C36" },
+  {
+    name: "Dark: unknown text (#9AA6B4) on unknown surface (#232C36)",
+    fg: "#9AA6B4",
+    bg: "#232C36",
+  },
 ];
 
 for (const p of pairs) {
   const cr = contrast(p.fg, p.bg);
-  console.log(`${p.name} => ${cr.toFixed(2)}:1 [${cr >= 7 ? "AAA" : cr >= 4.5 ? "AA" : cr >= 3 ? "AA-Large/UI" : "FAIL"}]`);
+  console.log(
+    `${p.name} => ${cr.toFixed(2)}:1 [${cr >= 7 ? "AAA" : cr >= 4.5 ? "AA" : cr >= 3 ? "AA-Large/UI" : "FAIL"}]`,
+  );
 }

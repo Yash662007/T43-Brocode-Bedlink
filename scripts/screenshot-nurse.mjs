@@ -2,7 +2,8 @@ import puppeteer from "puppeteer-core";
 import path from "path";
 import fs from "fs";
 
-const artifactDir = "C:\\Users\\aman0\\.gemini\\antigravity\\brain\\a8cb50a9-2810-4901-a750-fa2a296ef5d4";
+const artifactDir =
+  "C:\\Users\\aman0\\.gemini\\antigravity\\brain\\a8cb50a9-2810-4901-a750-fa2a296ef5d4";
 
 const executablePath = fs.existsSync("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe")
   ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"

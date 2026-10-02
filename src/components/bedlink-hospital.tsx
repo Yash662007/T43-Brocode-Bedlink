@@ -19,10 +19,10 @@ import {
   CountdownRing,
   FreshnessBadge,
   StatusBadge,
+  useClinicalTheme,
 } from "./clinical/shared-components";
 import { HospitalIncomingMap } from "./clinical/clinical-map";
 
-type Theme = "light" | "dark";
 type OfferState = "idle" | "incoming" | "held" | "superseded" | "expired";
 
 const bedIcons: Record<BedType, typeof BedDouble> = {
@@ -42,7 +42,7 @@ const bedNames: Record<BedType, string> = {
 };
 
 export function HospitalScreen() {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, toggleTheme] = useClinicalTheme();
   const [state, setState] = useState<OfferState>("incoming");
   const [secondsRemaining, setSecondsRemaining] = useState(84); // 01:24
   const [reasonOpen, setReasonOpen] = useState(false);
@@ -69,8 +69,6 @@ export function HospitalScreen() {
     return () => clearInterval(interval);
   }, [state]);
 
-  const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
-
   /* -------------------------------------------------------------------------- */
   /* 1. Incoming Urgent Offer View (role="alert")                               */
   /* -------------------------------------------------------------------------- */
@@ -96,7 +94,10 @@ export function HospitalScreen() {
               {en.incomingCondition}
             </span>
 
-            <h1 id="offer-title" className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text)]">
+            <h1
+              id="offer-title"
+              className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text)]"
+            >
               {en.incomingRequest}
             </h1>
 
@@ -122,7 +123,11 @@ export function HospitalScreen() {
                 className="inline-flex min-h-[32px] items-center gap-1 text-xs font-semibold text-[var(--accent)] hover:underline"
               >
                 <span>{mapCollapsed ? "Show map" : "Hide map"}</span>
-                {mapCollapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                {mapCollapsed ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronUp className="h-3 w-3" />
+                )}
               </button>
             </div>
             {!mapCollapsed && <HospitalIncomingMap />}
@@ -202,7 +207,9 @@ export function HospitalScreen() {
   /* -------------------------------------------------------------------------- */
   if (state === "held") {
     return (
-      <main className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+      <main
+        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
+      >
         <AppBar
           title={en.appName}
           subtitle={`${en.hospital} · ${en.hospitalUnit}`}
@@ -274,7 +281,9 @@ export function HospitalScreen() {
   /* -------------------------------------------------------------------------- */
   if (state === "superseded") {
     return (
-      <main className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+      <main
+        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
+      >
         <AppBar
           title={en.appName}
           subtitle={`${en.hospital} · ${en.hospitalUnit}`}
@@ -310,7 +319,9 @@ export function HospitalScreen() {
   /* -------------------------------------------------------------------------- */
   if (state === "expired") {
     return (
-      <main className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+      <main
+        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
+      >
         <AppBar
           title={en.appName}
           subtitle={`${en.hospital} · ${en.hospitalUnit}`}
@@ -344,7 +355,9 @@ export function HospitalScreen() {
   /* 5. Idle Content: Bed Overview & Simulation Preview Controls                 */
   /* -------------------------------------------------------------------------- */
   return (
-    <main className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+    <main
+      className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
+    >
       <AppBar
         title={en.appName}
         subtitle={`${en.hospital} · ${en.hospitalUnit}`}
@@ -355,9 +368,7 @@ export function HospitalScreen() {
 
       <div className="mx-auto max-w-lg px-4 pt-6 pb-12 sm:px-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">
-            {en.currentBeds}
-          </h1>
+          <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{en.currentBeds}</h1>
           <span className="text-xs font-semibold text-[var(--text-2)]">{en.hospital}</span>
         </div>
 
@@ -373,12 +384,16 @@ export function HospitalScreen() {
               >
                 <div className="flex items-center gap-3">
                   <Icon className="h-5 w-5 text-[var(--accent)]" aria-hidden="true" />
-                  <span className="font-bold text-sm text-[var(--text)]">{bedNames[bed.bedType]}</span>
+                  <span className="font-bold text-sm text-[var(--text)]">
+                    {bedNames[bed.bedType]}
+                  </span>
                   <StatusBadge status={statusType} />
                 </div>
                 <div className="flex items-center gap-3">
                   <FreshnessBadge updatedAtText={bed.updatedAt} />
-                  <span className="text-2xl font-bold tabular-nums text-[var(--text)]">{bed.free}</span>
+                  <span className="text-2xl font-bold tabular-nums text-[var(--text)]">
+                    {bed.free}
+                  </span>
                 </div>
               </div>
             );

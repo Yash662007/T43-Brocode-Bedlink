@@ -3,7 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import type { Database } from "@/integrations/supabase/types";
-import { cityGeneralHospital, inventoryBedTypes, type InventoryAuditEvent, type InventoryChange, type InventoryRecord } from "./hospital-inventory";
+import {
+  cityGeneralHospital,
+  inventoryBedTypes,
+  type InventoryAuditEvent,
+  type InventoryChange,
+  type InventoryRecord,
+} from "./hospital-inventory";
 
 const bedTypeSchema = z.enum(["icu", "ventilator", "oxygen", "cardiac", "burns"]);
 const inventoryChangeSchema = z.object({
@@ -26,7 +32,8 @@ function createPublicClient() {
     global: {
       fetch: (input, init) => {
         const headers = new Headers(init?.headers);
-        if (key.startsWith("sb_") && headers.get("Authorization") === `Bearer ${key}`) headers.delete("Authorization");
+        if (key.startsWith("sb_") && headers.get("Authorization") === `Bearer ${key}`)
+          headers.delete("Authorization");
         headers.set("apikey", key);
         return fetch(input, { ...init, headers });
       },
@@ -34,8 +41,8 @@ function createPublicClient() {
   });
 }
 
-export const getCityGeneralInventory = createServerFn({ method: "GET" })
-  .handler(async (): Promise<InventoryRecord[]> => {
+export const getCityGeneralInventory = createServerFn({ method: "GET" }).handler(
+  async (): Promise<InventoryRecord[]> => {
     const client = createPublicClient();
     const { data, error } = await client
       .from("hospital_inventory")
@@ -51,14 +58,19 @@ export const getCityGeneralInventory = createServerFn({ method: "GET" })
         free: row.free_count,
         updatedAt: row.updated_at,
       }));
-  });
+  },
+);
 
 export const saveCityGeneralInventory = createServerFn({ method: "POST" })
-  .inputValidator((data) => z.object({
-    beds: z.array(z.object({ bedType: bedTypeSchema, free: z.number().int().min(0) })).min(1),
-    eventType: z.enum(["nurse_applied", "restored"]),
-    nurseName: nurseNameSchema,
-  }).parse(data))
+  .inputValidator((data) =>
+    z
+      .object({
+        beds: z.array(z.object({ bedType: bedTypeSchema, free: z.number().int().min(0) })).min(1),
+        eventType: z.enum(["nurse_applied", "restored"]),
+        nurseName: nurseNameSchema,
+      })
+      .parse(data),
+  )
   .handler(async ({ data }): Promise<InventoryRecord[]> => {
     const client = createPublicClient();
     const { data: current, error: currentError } = await client
@@ -86,7 +98,11 @@ export const saveCityGeneralInventory = createServerFn({ method: "POST" })
     if (error) throw new Error("The bed counts could not be shared. Please try again.");
 
     const changes: InventoryChange[] = data.beds
-      .map((bed) => ({ bedType: bed.bedType, previousFree: previousCounts.get(bed.bedType) ?? 0, nextFree: bed.free }))
+      .map((bed) => ({
+        bedType: bed.bedType,
+        previousFree: previousCounts.get(bed.bedType) ?? 0,
+        nextFree: bed.free,
+      }))
       .filter((change) => change.previousFree !== change.nextFree);
 
     if (changes.length > 0) {
@@ -98,7 +114,8 @@ export const saveCityGeneralInventory = createServerFn({ method: "POST" })
         nurse_name: data.nurseName,
         source: data.eventType === "restored" ? "restore" : "manual",
       });
-      if (auditError) throw new Error("The bed counts were shared, but the history could not be saved.");
+      if (auditError)
+        throw new Error("The bed counts were shared, but the history could not be saved.");
     }
 
     return (saved ?? []).map((row) => ({
@@ -109,7 +126,9 @@ export const saveCityGeneralInventory = createServerFn({ method: "POST" })
   });
 
 export const recordAiProposedInventoryUpdate = createServerFn({ method: "POST" })
-  .inputValidator((data) => z.object({ changes: z.array(inventoryChangeSchema).min(1) }).parse(data))
+  .inputValidator((data) =>
+    z.object({ changes: z.array(inventoryChangeSchema).min(1) }).parse(data),
+  )
   .handler(async ({ data }): Promise<void> => {
     const client = createPublicClient();
     const { error } = await client.from("inventory_audit_history").insert({
@@ -123,8 +142,8 @@ export const recordAiProposedInventoryUpdate = createServerFn({ method: "POST" }
     if (error) throw new Error("The proposal could not be saved to history.");
   });
 
-export const getCityGeneralInventoryHistory = createServerFn({ method: "GET" })
-  .handler(async (): Promise<InventoryAuditEvent[]> => {
+export const getCityGeneralInventoryHistory = createServerFn({ method: "GET" }).handler(
+  async (): Promise<InventoryAuditEvent[]> => {
     const client = createPublicClient();
     const { data, error } = await client
       .from("inventory_audit_history")
@@ -143,4 +162,5 @@ export const getCityGeneralInventoryHistory = createServerFn({ method: "GET" })
       changes: inventoryChangeSchema.array().parse(event.changes),
       createdAt: event.created_at,
     }));
-  });
+  },
+);

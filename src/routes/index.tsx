@@ -9,9 +9,16 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "BedLink — Hospital Bed Availability & Dispatch" },
-      { name: "description", content: "A high-reliability clinical bed availability and ambulance dispatch coordination console." },
+      {
+        name: "description",
+        content:
+          "A high-reliability clinical bed availability and ambulance dispatch coordination console.",
+      },
       { property: "og:title", content: "BedLink — Clinical Decision Support" },
-      { property: "og:description", content: "Real-time bed availability and ambulance dispatch coordination." },
+      {
+        property: "og:description",
+        content: "Real-time bed availability and ambulance dispatch coordination.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -34,8 +41,10 @@ function Index() {
       const themeParam = params.get("theme");
       if (themeParam === "dark") {
         document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
       } else if (themeParam === "light") {
         document.documentElement.classList.remove("dark");
+        document.documentElement.classList.add("light");
       }
     }
   }, []);

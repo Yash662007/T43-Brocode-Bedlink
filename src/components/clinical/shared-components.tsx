@@ -17,6 +17,29 @@ import en from "@/locales/en.json";
 export type ConnectionState = "live" | "reconnecting" | "offline";
 
 /* -------------------------------------------------------------------------- */
+/* 0. Theme                                                                   */
+/* -------------------------------------------------------------------------- */
+export type ClinicalTheme = "light" | "dark";
+
+// tokens.css darkens `:root` under `prefers-color-scheme: dark` unless it
+// carries a `.light` class, so an explicit choice must be applied to the
+// document root (not just the screen's own wrapper) or a dark system
+// preference silently overrides it and "light" never visually appears.
+export function useClinicalTheme(initial: ClinicalTheme = "light") {
+  const [theme, setTheme] = useState<ClinicalTheme>(initial);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.classList.toggle("light", theme === "light");
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((current) => (current === "light" ? "dark" : "light"));
+
+  return [theme, toggleTheme] as const;
+}
+
+/* -------------------------------------------------------------------------- */
 /* 1. AppBar                                                                  */
 /* -------------------------------------------------------------------------- */
 export interface AppBarProps {
@@ -47,17 +70,15 @@ export function AppBar({
         {/* Left: Branding & Unit */}
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-[var(--text)]">
-              {title}
-            </span>
+            <span className="text-xl font-bold tracking-tight text-[var(--text)]">{title}</span>
             {/* Status dot + word */}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                 connectionState === "live"
                   ? "bg-[var(--ok-surface)] text-[var(--ok-text)]"
                   : connectionState === "reconnecting"
-                  ? "bg-[var(--warn-surface)] text-[var(--warn-text)]"
-                  : "bg-[var(--danger-surface)] text-[var(--danger-text)]"
+                    ? "bg-[var(--warn-surface)] text-[var(--warn-text)]"
+                    : "bg-[var(--danger-surface)] text-[var(--danger-text)]"
               }`}
               role="status"
               aria-label={`Connection status: ${connectionState}`}
@@ -67,8 +88,8 @@ export function AppBar({
                   connectionState === "live"
                     ? "bg-[var(--ok-text)]"
                     : connectionState === "reconnecting"
-                    ? "bg-[var(--warn-text)]"
-                    : "bg-[var(--danger-text)]"
+                      ? "bg-[var(--warn-text)]"
+                      : "bg-[var(--danger-text)]"
                 }`}
                 aria-hidden="true"
               />
@@ -76,16 +97,12 @@ export function AppBar({
                 {connectionState === "live"
                   ? en.live
                   : connectionState === "reconnecting"
-                  ? en.reconnecting
-                  : en.offline}
+                    ? en.reconnecting
+                    : en.offline}
               </span>
             </span>
           </div>
-          {subtitle && (
-            <span className="text-sm font-medium text-[var(--text-2)]">
-              {subtitle}
-            </span>
-          )}
+          {subtitle && <span className="text-sm font-medium text-[var(--text-2)]">{subtitle}</span>}
         </div>
 
         {/* Right: Actions */}
@@ -108,10 +125,10 @@ export function AppBar({
                   {r === "nurse"
                     ? en.nurseRole
                     : r === "hospital"
-                    ? en.hospitalRole
-                    : r === "ambulance"
-                    ? en.ambulanceRole
-                    : en.adminRole}
+                      ? en.hospitalRole
+                      : r === "ambulance"
+                        ? en.ambulanceRole
+                        : en.adminRole}
                 </button>
               ))}
             </div>
@@ -184,7 +201,8 @@ export interface FreshnessBadgeProps {
 
 export function FreshnessBadge({ updatedAtText }: FreshnessBadgeProps) {
   const isNoData = !updatedAtText || updatedAtText === "No data" || updatedAtText === en.noData;
-  const isJustNow = updatedAtText.toLowerCase().includes("just now") || updatedAtText === en.justNow;
+  const isJustNow =
+    updatedAtText.toLowerCase().includes("just now") || updatedAtText === en.justNow;
 
   let ageMinutes = 0;
   if (!isNoData && !isJustNow) {
@@ -263,7 +281,9 @@ export function ConfidenceTag({ level }: { level: ConfidenceLevel }) {
   const IconComp = config.Icon;
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${config.cls}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${config.cls}`}
+    >
       <IconComp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" strokeWidth={2} />
       <span>{config.label}</span>
     </span>
@@ -308,27 +328,19 @@ export function CountdownRing({
   const isWarn = remainingSeconds <= 30 && remainingSeconds > 10;
   const isDanger = remainingSeconds <= 10;
 
-  const color = isDanger
-    ? "var(--danger-text)"
-    : isWarn
-    ? "var(--warn-text)"
-    : "var(--accent)";
+  const color = isDanger ? "var(--danger-text)" : isWarn ? "var(--warn-text)" : "var(--accent)";
 
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
   const formattedTime = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   // Aria-live announcement at 60s, 30s, 10s only
-  const shouldAnnounce = remainingSeconds === 60 || remainingSeconds === 30 || remainingSeconds === 10;
+  const shouldAnnounce =
+    remainingSeconds === 60 || remainingSeconds === 30 || remainingSeconds === 10;
 
   return (
     <div className="relative inline-flex flex-col items-center justify-center">
-      <svg
-        width={size}
-        height={size}
-        className="-rotate-90 transform"
-        aria-hidden="true"
-      >
+      <svg width={size} height={size} className="-rotate-90 transform" aria-hidden="true">
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -381,9 +393,7 @@ export interface BottomActionBarProps {
 export function BottomActionBar({ children }: BottomActionBarProps) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-[var(--border)] bg-[var(--surface)]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-clinical backdrop-blur-xs">
-      <div className="mx-auto flex max-w-lg items-center justify-center">
-        {children}
-      </div>
+      <div className="mx-auto flex max-w-lg items-center justify-center">{children}</div>
     </div>
   );
 }
@@ -393,7 +403,7 @@ export function BottomActionBar({ children }: BottomActionBarProps) {
 /* -------------------------------------------------------------------------- */
 export interface ClinicalToastProps {
   message: string;
-  onUndo?: () => void;
+  onUndo?: (() => void) | undefined;
   onClose: () => void;
 }
 

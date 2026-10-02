@@ -33,9 +33,8 @@ import {
   OfflineBanner,
   SimulatedBadge,
   StatusBadge,
+  useClinicalTheme,
 } from "./clinical/shared-components";
-
-type Theme = "light" | "dark";
 
 const bedIcons: Record<BedType, typeof BedDouble> = {
   icu: Activity,
@@ -57,7 +56,7 @@ export function NurseScreen() {
   const [beds, setBeds] = useState(nurseBeds);
   const [simple, setSimple] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, toggleTheme] = useClinicalTheme();
   const [nurseName, setNurseName] = useState(en.defaultNurseName);
   const [toast, setToast] = useState<string | null>(null);
   const [recentlyUpdatedBed, setRecentlyUpdatedBed] = useState<BedType | null>(null);
@@ -119,10 +118,8 @@ export function NurseScreen() {
 
     setBeds((current) =>
       current.map((row) =>
-        row.bedType === bedType
-          ? { ...row, free: clamped, updatedAt: en.justNow }
-          : row
-      )
+        row.bedType === bedType ? { ...row, free: clamped, updatedAt: en.justNow } : row,
+      ),
     );
 
     const text = `${bedNames[bedType]}: ${clamped} ${en.free}.`;
@@ -195,7 +192,9 @@ export function NurseScreen() {
   };
 
   const nurseFilterOptions = Array.from(
-    new Set(history.map((event) => event.nurseName).filter((name): name is string => Boolean(name)))
+    new Set(
+      history.map((event) => event.nurseName).filter((name): name is string => Boolean(name)),
+    ),
   );
 
   const filteredHistory = history.filter((event) => {
@@ -208,14 +207,16 @@ export function NurseScreen() {
   });
 
   return (
-    <div className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+    <div
+      className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
+    >
       {/* 1. Global Clinical App Bar */}
       <AppBar
         title={en.appName}
         subtitle={`${en.hospital} · ${en.hospitalUnit}`}
         connectionState={offline ? "offline" : "live"}
         theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Offline Alert Banner */}
@@ -276,7 +277,11 @@ export function NurseScreen() {
                 {/* Left: Acuity Icon + Label + Badges */}
                 <div className="flex flex-col gap-2 min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <Icon className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" strokeWidth={2} />
+                    <Icon
+                      className="h-5 w-5 shrink-0 text-[var(--accent)]"
+                      aria-hidden="true"
+                      strokeWidth={2}
+                    />
                     <h2 className="text-lg font-bold text-[var(--text)] truncate">
                       {bedNames[row.bedType]}
                     </h2>
@@ -301,7 +306,10 @@ export function NurseScreen() {
 
                 {/* Right: Stepper Controls (64px minus and plus) */}
                 {simple ? (
-                  <div className="flex items-center gap-2" aria-label={`${bedNames[row.bedType]} quick count`}>
+                  <div
+                    className="flex items-center gap-2"
+                    aria-label={`${bedNames[row.bedType]} quick count`}
+                  >
                     {[0, 1, 3].map((val) => (
                       <button
                         key={val}
@@ -357,7 +365,10 @@ export function NurseScreen() {
 
         {/* Vertical History Timeline (Collapsible) */}
         {showHistory && (
-          <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-clinical" aria-labelledby="history-title">
+          <section
+            className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-clinical"
+            aria-labelledby="history-title"
+          >
             <h2 id="history-title" className="text-base font-bold text-[var(--text)]">
               {en.historyTitle}
             </h2>
@@ -416,8 +427,8 @@ export function NurseScreen() {
                         {item.eventType === "ai_proposed"
                           ? en.historyAiProposed
                           : item.eventType === "restored"
-                          ? en.historyRestored
-                          : en.historyNurseApplied}
+                            ? en.historyRestored
+                            : en.historyNurseApplied}
                       </span>
                       <span className="text-xs text-[var(--text-2)] tabular-nums">
                         {new Intl.DateTimeFormat(undefined, {
@@ -517,11 +528,10 @@ export function NurseScreen() {
                 <h3 className="text-sm font-bold text-[var(--text)]">{en.aiReviewReady}</h3>
                 <ul className="mt-2 flex flex-col gap-2">
                   {suggestedUpdates.map((update) => (
-                    <li
-                      key={update.bedType}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="font-semibold text-[var(--text)]">{bedNames[update.bedType]}</span>
+                    <li key={update.bedType} className="flex items-center justify-between text-sm">
+                      <span className="font-semibold text-[var(--text)]">
+                        {bedNames[update.bedType]}
+                      </span>
                       <span className="tabular-nums text-[var(--text-2)]">
                         {update.free} {en.free} ·{" "}
                         {update.availability === "available" ? en.aiAvailable : en.aiUnavailable}
