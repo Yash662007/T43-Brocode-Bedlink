@@ -41,6 +41,14 @@ export type BedSnapshotDto = {
   isSimulated: boolean;
 };
 
+export type SpecialistStatusDto = {
+  capability: string;
+  label: string;
+  isOn: boolean;
+  isFresh: boolean;
+  updatedAt: string | null;
+};
+
 export type HospitalDto = {
   id: string;
   name: string;
@@ -50,10 +58,18 @@ export type HospitalDto = {
   schemes: string[];
   capabilities: string[];
   beds: BedSnapshotDto[];
+  specialists: SpecialistStatusDto[];
 };
 
 export function getHospitals() {
   return request<{ hospitals: HospitalDto[] }>("/api/hospitals");
+}
+
+export function toggleSpecialist(hospitalToken: string, capability: string, isOn: boolean) {
+  return request<{ ok: true }>(`/api/specialists/${hospitalToken}`, {
+    method: "POST",
+    body: JSON.stringify({ capability, isOn }),
+  });
 }
 
 export type BedUpdateBody =

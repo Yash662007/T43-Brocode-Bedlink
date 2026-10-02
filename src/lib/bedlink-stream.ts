@@ -1,4 +1,10 @@
-import type { HoldStatus, OfferDto, OfferStatus, RequestStatus } from "./bedlink-client";
+import type {
+  HoldStatus,
+  OfferDto,
+  OfferStatus,
+  RequestStatus,
+  SpecialistStatusDto,
+} from "./bedlink-client";
 
 const BASE_URL = import.meta.env["VITE_BEDLINK_API_URL"] || "http://localhost:4000";
 
@@ -20,6 +26,8 @@ export type HoldEvent = {
 
 export type OutcomeEvent = { requestId: string; status: RequestStatus };
 
+export type SpecialistEvent = { hospitalId: string; specialists: SpecialistStatusDto[] };
+
 export type TickEvent = {
   serverTime: string;
   offers: Array<{ offerId: string; requestId: string; hospitalId: string; remainingSeconds: number }>;
@@ -32,6 +40,7 @@ export type StreamHandlers = {
   onHold?: (data: HoldEvent) => void;
   onOutcome?: (data: OutcomeEvent) => void;
   onTick?: (data: TickEvent) => void;
+  onSpecialist?: (data: SpecialistEvent) => void;
   onConnectionChange?: (state: "live" | "reconnecting") => void;
 };
 
@@ -58,6 +67,7 @@ export function subscribeToBedlinkStream(handlers: StreamHandlers): () => void {
   listen("hold", handlers.onHold);
   listen("outcome", handlers.onOutcome);
   listen("tick", handlers.onTick);
+  listen("specialist", handlers.onSpecialist);
 
   return () => source.close();
 }

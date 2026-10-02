@@ -154,5 +154,11 @@
   "nurseRole": "Nurse",
   "hospitalRole": "Hospital",
   "ambulanceRole": "Ambulance",
-  "adminRole": "Admin"
+  "adminRole": "Admin",
+  "specialistsTitle": "On-call specialists",
+  "specialistsHint": "Only counts toward a match while marked on call and recently confirmed.",
+  "specialistOn": "On call",
+  "specialistExpired": "Expired — confirm again",
+  "specialistOff": "Off call",
+  "specialistUpdateError": "Could not update on-call status. Please try again."
 }

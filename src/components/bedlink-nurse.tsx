@@ -13,6 +13,7 @@ import {
   PenLine,
   Plus,
   RotateCcw,
+  Stethoscope,
   Wind,
   X,
 } from "lucide-react";
@@ -22,7 +23,9 @@ import {
   getBedHistory,
   getHospitals,
   proposeBedChanges,
+  toggleSpecialist,
   updateBed as apiUpdateBed,
+  type SpecialistStatusDto,
 } from "@/lib/bedlink-client";
 import { bedEventToAuditEvent } from "@/lib/bedlink-nurse-adapters";
 import { subscribeToBedlinkStream } from "@/lib/bedlink-stream";
@@ -73,6 +76,8 @@ export function NurseScreen() {
   const [beds, setBeds] = useState<BedRow[] | null>(null);
   // Last counts the server confirmed — used to only send what actually changed.
   const [serverBeds, setServerBeds] = useState<BedRow[] | null>(null);
+  const [specialists, setSpecialists] = useState<SpecialistStatusDto[] | null>(null);
+  const [specialistError, setSpecialistError] = useState<string | null>(null);
   const [simple, setSimple] = useState(false);
   const [offline, setOffline] = useState(false);
   const [theme, toggleTheme] = useClinicalTheme();
@@ -117,6 +122,8 @@ export function NurseScreen() {
       setBeds((current) => current ?? loaded);
       setServerBeds(loaded);
     }
+    const hospital = hospitalsData?.hospitals.find((h) => h.id === DEMO_HOSPITAL_ID);
+    if (hospital) setSpecialists(hospital.specialists);
   }, [hospitalsData]);
 
   // Live updates from other sources (telegram, phoned-in, simulated feed,
@@ -140,6 +147,10 @@ export function NurseScreen() {
               : row,
           ) ?? current,
         );
+      },
+      onSpecialist: (update) => {
+        if (update.hospitalId !== DEMO_HOSPITAL_ID) return;
+        setSpecialists(update.specialists);
       },
     });
     return unsubscribe;
@@ -184,6 +195,21 @@ export function NurseScreen() {
       setToast(en.inventoryShared);
     },
     onError: () => setToast(en.inventoryError),
+  });
+
+  const specialistMutation = useMutation({
+    mutationFn: ({ capability, isOn }: { capability: string; isOn: boolean }) =>
+      toggleSpecialist(NURSE_TOKEN, capability, isOn),
+    onMutate: ({ capability, isOn }) => {
+      setSpecialistError(null);
+      setSpecialists(
+        (current) =>
+          current?.map((row) =>
+            row.capability === capability ? { ...row, isOn, isFresh: isOn } : row,
+          ) ?? current,
+      );
+    },
+    onError: () => setSpecialistError(en.specialistUpdateError),
   });
 
   const updateBed = (bedType: BedType, nextValue: number) => {
@@ -458,6 +484,74 @@ export function NurseScreen() {
                 );
               })}
             </section>
+
+            {/* 2b. On-call specialist toggles (only when this hospital has any) */}
+            {specialists && specialists.length > 0 && (
+              <section
+                className="mt-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-clinical"
+                aria-label={en.specialistsTitle}
+              >
+                <h2 className="text-sm font-bold text-[var(--text)]">{en.specialistsTitle}</h2>
+                <p className="mt-0.5 text-xs text-[var(--text-2)]">{en.specialistsHint}</p>
+
+                <ul className="mt-3 flex flex-col gap-2">
+                  {specialists.map((row) => (
+                    <li
+                      key={row.capability}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Stethoscope
+                          className="h-4 w-4 shrink-0 text-[var(--accent)]"
+                          aria-hidden="true"
+                        />
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate text-sm font-semibold text-[var(--text)]">
+                            {row.label}
+                          </span>
+                          <span
+                            className={`text-xs font-semibold ${
+                              row.isFresh
+                                ? "text-[var(--ok-text)]"
+                                : row.isOn
+                                  ? "text-[var(--warn-text)]"
+                                  : "text-[var(--text-2)]"
+                            }`}
+                          >
+                            {row.isFresh
+                              ? en.specialistOn
+                              : row.isOn
+                                ? en.specialistExpired
+                                : en.specialistOff}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          specialistMutation.mutate({ capability: row.capability, isOn: !row.isOn })
+                        }
+                        aria-pressed={row.isFresh}
+                        aria-label={`${row.isFresh ? en.specialistOff : en.specialistOn}: ${row.label}`}
+                        className={`inline-flex min-h-[48px] min-w-[88px] items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
+                          row.isFresh
+                            ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-text-on)]"
+                            : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+                        }`}
+                      >
+                        {row.isFresh ? en.specialistOn : en.specialistOff}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                {specialistError && (
+                  <p className="mt-2 text-xs font-medium text-[var(--danger-text)]" role="alert">
+                    {specialistError}
+                  </p>
+                )}
+              </section>
+            )}
 
             {/* 3. Secondary: Update History Link (never above bed cards) */}
             <div className="mt-8 border-t border-[var(--border)] pt-4 text-center">

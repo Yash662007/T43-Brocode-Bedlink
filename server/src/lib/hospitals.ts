@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { getHospitalCapabilities } from "./capabilities.js";
+import { getHospitalCapabilities, listSpecialistStatus } from "./capabilities.js";
 import { listBedSnapshots } from "./beds.js";
 import { formatFreshness } from "./freshness.js";
 
@@ -61,5 +61,6 @@ export function listHospitalsWithBeds() {
       source: bed.source,
       isSimulated: bed.source === "sim_feed",
     })),
+    specialists: listSpecialistStatus(hospital.id),
   }));
 }

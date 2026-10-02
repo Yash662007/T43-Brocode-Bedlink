@@ -4,8 +4,14 @@ import { resolveToken } from "../lib/tokens.js";
 import { getHospital } from "../lib/hospitals.js";
 import { listBedSnapshots, applyBedUpdate } from "../lib/beds.js";
 import { capabilitiesConfig } from "../config/index.js";
-import { getHospitalCapabilities, setSpecialistOnCall, hasCapability } from "../lib/capabilities.js";
+import {
+  getHospitalCapabilities,
+  listSpecialistStatus,
+  setSpecialistOnCall,
+  hasCapability,
+} from "../lib/capabilities.js";
 import { nowIso } from "../lib/ids.js";
+import { broadcast } from "../lib/sse.js";
 import { parseBedCountsText, type ParsedBedCount } from "./parse.js";
 
 type TelegramLink = { chat_id: string; hospital_id: string; token: string; linked_at: string };
@@ -170,6 +176,10 @@ export function startBot() {
         capability,
         isOn: !currentlyOn,
         source: "telegram",
+      });
+      broadcast("specialist", {
+        hospitalId: link.hospital_id,
+        specialists: listSpecialistStatus(link.hospital_id),
       });
       await ctx.answerCallbackQuery({ text: !currentlyOn ? "Marked on-call." : "Marked off-call." });
       return;

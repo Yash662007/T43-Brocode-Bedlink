@@ -10,12 +10,16 @@ export function getHospitalCapabilities(hospitalId: string): string[] {
   return rows.map((r) => r.capability);
 }
 
-function isSpecialistFresh(hospitalId: string, capability: string): boolean {
-  const row = db
+function getSpecialistRow(hospitalId: string, capability: string) {
+  return db
     .prepare(
       `SELECT is_on, updated_at FROM specialist_on_call WHERE hospital_id = ? AND capability = ?`,
     )
     .get(hospitalId, capability) as { is_on: number; updated_at: string } | undefined;
+}
+
+function isSpecialistFresh(hospitalId: string, capability: string): boolean {
+  const row = getSpecialistRow(hospitalId, capability);
   if (!row || !row.is_on) return false;
   return ageMinutes(row.updated_at) <= rankingConfig.specialistFreshnessMinutes;
 }
@@ -33,6 +37,32 @@ export function hasCapability(hospitalId: string, capability: string): boolean {
 
 export function hasAllCapabilities(hospitalId: string, required: string[]): boolean {
   return required.every((cap) => hasCapability(hospitalId, cap));
+}
+
+export type SpecialistStatus = {
+  capability: string;
+  label: string;
+  isOn: boolean;
+  isFresh: boolean;
+  updatedAt: string | null;
+};
+
+/** The hospital's own specialist-gated capabilities, with current on-call status. */
+export function listSpecialistStatus(hospitalId: string): SpecialistStatus[] {
+  const owned = getHospitalCapabilities(hospitalId);
+  return owned
+    .filter((cap) => capabilitiesConfig.capabilities[cap]?.needsSpecialist)
+    .map((cap) => {
+      const row = getSpecialistRow(hospitalId, cap);
+      const isOn = Boolean(row?.is_on);
+      return {
+        capability: cap,
+        label: capabilitiesConfig.capabilities[cap]?.label ?? cap,
+        isOn,
+        isFresh: isOn && ageMinutes(row!.updated_at) <= rankingConfig.specialistFreshnessMinutes,
+        updatedAt: row?.updated_at ?? null,
+      };
+    });
 }
 
 export function setSpecialistOnCall(params: {
