@@ -1,0 +1,45 @@
+{
+  "_comment": "needs clinical review — condition -> required capability/bed type mapping is a placeholder set for the demo, not a validated triage protocol.",
+  "conditions": {
+    "chest_pain": {
+      "label": "Chest Pain",
+      "bedType": "cardiac",
+      "requiredCapabilities": ["cardiac_cath_lab"]
+    },
+    "cardiac_arrest": {
+      "label": "Cardiac Arrest",
+      "bedType": "icu",
+      "requiredCapabilities": ["icu_unit", "cardiac_cath_lab"]
+    },
+    "stroke": {
+      "label": "Stroke",
+      "bedType": "icu",
+      "requiredCapabilities": ["icu_unit", "neuro_stroke_unit"]
+    },
+    "major_trauma": {
+      "label": "Major Trauma",
+      "bedType": "icu",
+      "requiredCapabilities": ["icu_unit", "trauma_center"]
+    },
+    "severe_burns": {
+      "label": "Severe Burns",
+      "bedType": "burns",
+      "requiredCapabilities": ["burns_unit"]
+    },
+    "respiratory_distress": {
+      "label": "Respiratory Distress",
+      "bedType": "ventilator",
+      "requiredCapabilities": ["ventilator_support"]
+    },
+    "breathing_difficulty": {
+      "label": "Breathing Difficulty",
+      "bedType": "oxygen",
+      "requiredCapabilities": ["oxygen_supply"]
+    },
+    "sepsis": {
+      "label": "Sepsis / Severe Infection",
+      "bedType": "icu",
+      "requiredCapabilities": ["icu_unit"]
+    }
+  }
+}

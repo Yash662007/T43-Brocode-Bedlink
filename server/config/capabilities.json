@@ -1,0 +1,13 @@
+{
+  "_comment": "needs clinical review — capability list and specialist requirements are a placeholder set for the demo, not a validated clinical taxonomy.",
+  "capabilities": {
+    "icu_unit": { "label": "ICU Unit", "needsSpecialist": false },
+    "ventilator_support": { "label": "Ventilator Support", "needsSpecialist": false },
+    "oxygen_supply": { "label": "Oxygen Supply", "needsSpecialist": false },
+    "cardiac_cath_lab": { "label": "Cardiac Cath Lab", "needsSpecialist": true },
+    "burns_unit": { "label": "Burns Unit", "needsSpecialist": false },
+    "trauma_center": { "label": "Trauma Center", "needsSpecialist": true },
+    "neuro_stroke_unit": { "label": "Neuro / Stroke Unit", "needsSpecialist": true },
+    "dialysis": { "label": "Dialysis", "needsSpecialist": false }
+  }
+}

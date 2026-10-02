@@ -1,0 +1,30 @@
+{
+  "_comment": "ASSUMPTIONS — every constant below is a placeholder tuned by guesswork for the demo, not by operational data. Revisit before any real deployment.",
+  "assumedSpeedKmh": 30,
+  "bedTypeExpiryMinutes": {
+    "icu": 60,
+    "ventilator": 60,
+    "oxygen": 90,
+    "cardiac": 60,
+    "burns": 90
+  },
+  "fallbackPenaltyMinutes": 45,
+  "loadPenaltyPerActiveHoldMinutes": 3,
+  "loadPenaltyMaxHolds": 5,
+  "pAvailable": {
+    "freshWindowMinutes": 15,
+    "decayHalfLifeMinutes": 45,
+    "zeroFreeBase": 0.15,
+    "zeroFreeDecayHalfLifeMinutes": 20,
+    "unknownPAvailable": 0.3,
+    "likelyThreshold": 0.7,
+    "uncertainThreshold": 0.4,
+    "minPAvailable": 0.05,
+    "maxPAvailable": 0.98
+  },
+  "specialistFreshnessMinutes": 180,
+  "holdTtlMinutes": 30,
+  "offerResponseSeconds": 120,
+  "parallelOfferCount": 3,
+  "tickerIntervalSeconds": 1
+}

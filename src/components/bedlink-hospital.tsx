@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BedDouble,
   Check,
   Clock3,
   HeartPulse,
-  RotateCcw,
   Wifi,
   Wind,
   X,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { nurseBeds, type BedType } from "@/lib/bedlink-fixtures";
+import type { BedType } from "@/lib/bedlink-fixtures";
 import en from "@/locales/en.json";
 import {
   AppBar,
@@ -22,6 +22,9 @@ import {
   useClinicalTheme,
 } from "./clinical/shared-components";
 import { HospitalIncomingMap } from "./clinical/clinical-map";
+import { acceptOffer, getHospitals, rejectOffer, releaseHold, type OfferDto } from "@/lib/bedlink-client";
+import { subscribeToBedlinkStream } from "@/lib/bedlink-stream";
+import { DEMO_CONDITIONS, DEMO_HOSPITAL_ID } from "@/lib/bedlink-demo-config";
 
 type OfferState = "idle" | "incoming" | "held" | "superseded" | "expired";
 
@@ -41,10 +44,16 @@ const bedNames: Record<BedType, string> = {
   burns: "Burns",
 };
 
+function conditionLabel(conditionId: string): string {
+  return DEMO_CONDITIONS.find((c) => c.id === conditionId)?.label ?? conditionId;
+}
+
 export function HospitalScreen() {
   const [theme, toggleTheme] = useClinicalTheme();
-  const [state, setState] = useState<OfferState>("incoming");
-  const [secondsRemaining, setSecondsRemaining] = useState(84); // 01:24
+  const [state, setState] = useState<OfferState>("idle");
+  const [offer, setOffer] = useState<OfferDto | null>(null);
+  const [holdId, setHoldId] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [releaseConfirm, setReleaseConfirm] = useState(false);
   const [mapCollapsed, setMapCollapsed] = useState(() => {
@@ -54,25 +63,116 @@ export function HospitalScreen() {
     return true;
   });
 
-  // Live Countdown Timer
+  const { data: hospitalsData } = useQuery({
+    queryKey: ["hospitals"],
+    queryFn: () => getHospitals(),
+    refetchInterval: 30000,
+  });
+  const [liveBeds, setLiveBeds] = useState<
+    Array<{ bedType: BedType; free: number; updatedAt: string; isSimulated: boolean }> | null
+  >(null);
+
   useEffect(() => {
-    if (state !== "incoming") return;
-    const interval = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          setState("expired");
-          return 0;
+    const hospital = hospitalsData?.hospitals.find((h) => h.id === DEMO_HOSPITAL_ID);
+    if (hospital) {
+      setLiveBeds(
+        hospital.beds.map((b) => ({
+          bedType: b.bedType,
+          free: b.effectiveFree,
+          updatedAt: b.freshness,
+          isSimulated: b.isSimulated,
+        })),
+      );
+    }
+  }, [hospitalsData]);
+
+  // Live offer/hold events addressed to this hospital, and countdowns.
+  useEffect(() => {
+    const unsubscribe = subscribeToBedlinkStream({
+      onOffer: (incoming) => {
+        if (incoming.hospitalId !== DEMO_HOSPITAL_ID) return;
+        if (incoming.status === "pending") {
+          setOffer(incoming);
+          setState("incoming");
+          const total = Math.round(
+            (new Date(incoming.respondsBy).getTime() - Date.now()) / 1000,
+          );
+          setRemainingSeconds(Math.max(0, total));
+          return;
         }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [state]);
+        setOffer((current) => (current?.offerId === incoming.offerId ? incoming : current));
+        if (incoming.offerId !== offer?.offerId) return;
+        if (incoming.status === "superseded") setState("superseded");
+        if (incoming.status === "expired") setState("expired");
+      },
+      onHold: (hold) => {
+        if (hold.hospitalId !== DEMO_HOSPITAL_ID) return;
+        if (hold.status === "active") {
+          setState("held");
+        } else if (hold.status === "released" || hold.status === "expired") {
+          setHoldId(null);
+          setState("idle");
+          setOffer(null);
+        }
+      },
+      onBedChange: (change) => {
+        if (change.hospitalId !== DEMO_HOSPITAL_ID) return;
+        setLiveBeds((current) =>
+          current?.map((row) =>
+            row.bedType === change.bedType
+              ? { ...row, free: change.effectiveFree, updatedAt: en.justNow }
+              : row,
+          ) ?? current,
+        );
+      },
+      onTick: (tick) => {
+        if (offer) {
+          const mine = tick.offers.find((o) => o.offerId === offer.offerId);
+          if (mine) setRemainingSeconds(mine.remainingSeconds);
+        }
+      },
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offer?.offerId]);
+
+  const handleAccept = async () => {
+    if (!offer) return;
+    const result = await acceptOffer(offer.offerId);
+    if (result.accepted) {
+      setHoldId(result.holdId);
+      setState("held");
+    } else {
+      setState(result.reason.toLowerCase().includes("taken") ? "superseded" : "expired");
+    }
+  };
+
+  const handleDecline = async (reason?: string) => {
+    if (!offer) return;
+    await rejectOffer(offer.offerId, reason);
+    setState("idle");
+    setOffer(null);
+    setReasonOpen(false);
+  };
+
+  const handleRelease = async () => {
+    if (!holdId) return;
+    await releaseHold(holdId);
+    setReleaseConfirm(false);
+    setState("idle");
+    setOffer(null);
+    setHoldId(null);
+  };
 
   /* -------------------------------------------------------------------------- */
   /* 1. Incoming Urgent Offer View (role="alert")                               */
   /* -------------------------------------------------------------------------- */
-  if (state === "incoming") {
+  if (state === "incoming" && offer) {
+    const totalSeconds = Math.max(
+      1,
+      Math.round((new Date(offer.respondsBy).getTime() - new Date(offer.sentAt).getTime()) / 1000),
+    );
+
     return (
       <main
         className={`min-h-screen bg-[var(--bg)] text-[var(--text)] pb-8 ${theme === "dark" ? "dark" : ""}`}
@@ -91,7 +191,7 @@ export function HospitalScreen() {
           {/* Top: Condition & Acuity Badge */}
           <div className="flex flex-col items-center text-center">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--danger-text)]/20 bg-[var(--danger-surface)] px-2.5 py-0.5 text-xs font-bold tracking-wider uppercase text-[var(--danger-text)]">
-              {en.incomingCondition}
+              {conditionLabel(offer.condition)}
             </span>
 
             <h1
@@ -103,11 +203,14 @@ export function HospitalScreen() {
 
             <div className="mt-0.5 flex items-center gap-2 text-sm sm:text-base font-semibold text-[var(--text-2)]">
               <BedDouble className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
-              <span>{en.icuBedRequired}</span>
+              <span>{bedNames[offer.bedType]} bed required</span>
             </div>
 
             <p className="mt-0.5 text-xs sm:text-sm font-medium text-[var(--text-2)] tabular-nums">
-              {en.arrivingIn} <strong className="font-bold text-[var(--text)]">8 min</strong>
+              {en.arrivingIn}{" "}
+              <strong className="font-bold text-[var(--text)]">
+                {offer.etaMinutes != null ? Math.round(offer.etaMinutes) : "?"} min
+              </strong>
             </p>
           </div>
 
@@ -130,14 +233,14 @@ export function HospitalScreen() {
                 )}
               </button>
             </div>
-            {!mapCollapsed && <HospitalIncomingMap />}
+            {!mapCollapsed && <HospitalIncomingMap etaMinutes={offer?.etaMinutes ?? undefined} />}
           </div>
 
           {/* Circular Countdown Progress */}
           <div className="my-2 sm:my-4 flex items-center justify-center">
             <CountdownRing
-              totalSeconds={84}
-              remainingSeconds={secondsRemaining}
+              totalSeconds={totalSeconds}
+              remainingSeconds={remainingSeconds}
               size={120}
               strokeWidth={7}
             />
@@ -148,7 +251,7 @@ export function HospitalScreen() {
             {/* Primary Action: Accept & Hold (Flat Filled Green, 64px, No Glow) */}
             <button
               type="button"
-              onClick={() => setState("held")}
+              onClick={handleAccept}
               className="inline-flex min-h-[64px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--ok-text)] px-6 text-base font-bold text-white shadow-clinical transition-transform active:scale-[0.99]"
             >
               <Check className="h-6 w-6" aria-hidden="true" strokeWidth={2.5} />
@@ -173,14 +276,14 @@ export function HospitalScreen() {
                   aria-label="Optional rejection reasons"
                 >
                   {[
-                    { label: en.reasonNoBed },
-                    { label: en.reasonNoSpecialist },
-                    { label: en.reasonOverloaded },
+                    { label: en.reasonNoBed, reason: "no_bed" },
+                    { label: en.reasonNoSpecialist, reason: "no_specialist" },
+                    { label: en.reasonOverloaded, reason: "overloaded" },
                   ].map((chip) => (
                     <button
                       key={chip.label}
                       type="button"
-                      onClick={() => setState("idle")}
+                      onClick={() => handleDecline(chip.reason)}
                       className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text)] transition-colors hover:bg-[var(--surface-2)] active:scale-95"
                     >
                       {chip.label}
@@ -188,7 +291,7 @@ export function HospitalScreen() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => setState("idle")}
+                    onClick={() => handleDecline()}
                     className="inline-flex min-h-[48px] items-center px-3 text-xs font-semibold text-[var(--accent)] hover:underline"
                   >
                     {en.reasonSkip}
@@ -230,11 +333,11 @@ export function HospitalScreen() {
             {en.confirmedTitle}
           </h1>
           <p className="mt-1 text-base font-semibold text-[var(--text-2)] tabular-nums">
-            {en.bedHeldMessage}
+            {offer?.etaMinutes != null ? `ETA ${Math.round(offer.etaMinutes)} min` : en.bedHeldMessage}
           </p>
 
           <div className="mt-6 w-full">
-            <HospitalIncomingMap />
+            <HospitalIncomingMap etaMinutes={offer?.etaMinutes ?? undefined} />
           </div>
 
           <div className="mt-8 w-full max-w-xs">
@@ -244,10 +347,7 @@ export function HospitalScreen() {
                 <div className="mt-3 flex flex-col gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setReleaseConfirm(false);
-                      setState("idle");
-                    }}
+                    onClick={handleRelease}
                     className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-[var(--danger-text)] px-4 text-sm font-bold text-white shadow-xs"
                   >
                     {en.releaseBed}
@@ -304,7 +404,10 @@ export function HospitalScreen() {
 
           <button
             type="button"
-            onClick={() => setState("idle")}
+            onClick={() => {
+              setOffer(null);
+              setState("idle");
+            }}
             className="mt-6 inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 text-sm font-bold text-[var(--text)] shadow-xs hover:bg-[var(--surface-2)]"
           >
             {en.returnToBeds}
@@ -341,7 +444,10 @@ export function HospitalScreen() {
 
           <button
             type="button"
-            onClick={() => setState("idle")}
+            onClick={() => {
+              setOffer(null);
+              setState("idle");
+            }}
             className="mt-6 inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 text-sm font-bold text-[var(--text)] shadow-xs hover:bg-[var(--surface-2)]"
           >
             {en.returnToBeds}
@@ -352,7 +458,7 @@ export function HospitalScreen() {
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 5. Idle Content: Bed Overview & Simulation Preview Controls                 */
+  /* 5. Idle Content: Bed Overview, waiting for requests                        */
   /* -------------------------------------------------------------------------- */
   return (
     <main
@@ -374,7 +480,7 @@ export function HospitalScreen() {
 
         {/* Compact Bed Overview with FreshnessBadge */}
         <div className="mt-4 flex flex-col gap-2">
-          {nurseBeds.slice(0, 4).map((bed) => {
+          {(liveBeds ?? []).slice(0, 4).map((bed) => {
             const Icon = bedIcons[bed.bedType];
             const statusType = bed.free === 0 ? "none" : bed.free <= 2 ? "low" : "available";
             return (
@@ -405,39 +511,6 @@ export function HospitalScreen() {
           <Wifi className="h-6 w-6 text-[var(--ok-text)]" aria-hidden="true" />
           <p className="mt-2 text-base font-bold text-[var(--text)]">{en.waitingForRequests}</p>
           <span className="text-xs text-[var(--text-2)]">{en.connectionLive}</span>
-        </div>
-
-        {/* Simulation Preview Controls */}
-        <div className="mt-8 border-t border-[var(--border)] pt-4">
-          <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-2)]">
-            Simulation State Previews
-          </span>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSecondsRemaining(84);
-                setState("incoming");
-              }}
-              className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
-            >
-              {en.previewRequest}
-            </button>
-            <button
-              type="button"
-              onClick={() => setState("superseded")}
-              className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
-            >
-              {en.previewSuperseded}
-            </button>
-            <button
-              type="button"
-              onClick={() => setState("expired")}
-              className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
-            >
-              {en.previewExpired}
-            </button>
-          </div>
         </div>
       </div>
     </main>

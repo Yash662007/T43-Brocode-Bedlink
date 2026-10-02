@@ -86,6 +86,7 @@ export interface HospitalIncomingMapProps {
   hospitalLat?: number;
   hospitalLng?: number;
   hospitalName?: string;
+  etaMinutes?: number | undefined;
 }
 
 export function HospitalIncomingMap({
@@ -94,6 +95,7 @@ export function HospitalIncomingMap({
   hospitalLat = DEFAULT_HOSPITALS[0].lat,
   hospitalLng = DEFAULT_HOSPITALS[0].lng,
   hospitalName = DEFAULT_HOSPITALS[0].name,
+  etaMinutes,
 }: HospitalIncomingMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletTypes.Map | null>(null);
@@ -213,7 +215,7 @@ export function HospitalIncomingMap({
       )}
       <div ref={containerRef} className="h-full w-full leaflet-clinical-container" />
       <div className="absolute top-2 left-2 z-10 rounded-md border border-[var(--border)] bg-[var(--surface)]/90 px-2 py-1 text-xs font-semibold text-[var(--text)] shadow-xs backdrop-blur-xs">
-        Arrival trajectory: ETA 8 min
+        Arrival trajectory: ETA {etaMinutes != null ? `${Math.round(etaMinutes)} min` : "estimate"}
       </div>
     </div>
   );
