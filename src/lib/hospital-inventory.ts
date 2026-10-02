@@ -1,9 +1,4 @@
-import type { BedRow, BedType } from "@/lib/bedlink-fixtures";
-
-export const cityGeneralHospital = {
-  key: "city-general",
-  name: "City General Hospital",
-} as const;
+import type { BedType } from "@/lib/bedlink-fixtures";
 
 export type InventoryRecord = {
   bedType: BedType;
@@ -25,13 +20,3 @@ export type InventoryAuditEvent = {
   changes: InventoryChange[];
   createdAt: string;
 };
-
-export const inventoryBedTypes: BedType[] = ["icu", "ventilator", "oxygen", "cardiac", "burns"];
-
-export function toInventoryRecord(row: BedRow): InventoryRecord {
-  return {
-    bedType: row.bedType,
-    free: row.free,
-    updatedAt: new Date().toISOString(),
-  };
-}

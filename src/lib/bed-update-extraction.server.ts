@@ -2,7 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 const bedTypes = ["icu", "ventilator", "oxygen", "cardiac", "burns"] as const;
-type BedType = typeof bedTypes[number];
+type BedType = (typeof bedTypes)[number];
 
 type ExtractedUpdate = {
   bedType: BedType;
@@ -18,7 +18,12 @@ function extractJson(text: string): unknown {
 }
 
 function validateUpdates(value: unknown): ExtractedUpdate[] {
-  if (!value || typeof value !== "object" || !("updates" in value) || !Array.isArray(value.updates)) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("updates" in value) ||
+    !Array.isArray(value.updates)
+  ) {
     throw new Error("The AI could not identify any bed updates. Please try different wording.");
   }
 
@@ -26,11 +31,19 @@ function validateUpdates(value: unknown): ExtractedUpdate[] {
   for (const item of value.updates) {
     if (!item || typeof item !== "object") continue;
     const { bedType, free, availability } = item as Record<string, unknown>;
-    if (!bedTypes.includes(bedType as BedType) || typeof free !== "number" || !Number.isInteger(free) || free < 0 || (availability !== "available" && availability !== "unavailable")) continue;
+    if (
+      !bedTypes.includes(bedType as BedType) ||
+      typeof free !== "number" ||
+      !Number.isInteger(free) ||
+      free < 0 ||
+      (availability !== "available" && availability !== "unavailable")
+    )
+      continue;
     updates.push({ bedType: bedType as BedType, free, availability });
   }
 
-  if (updates.length === 0) throw new Error("The AI could not identify a supported bed type and count.");
+  if (updates.length === 0)
+    throw new Error("The AI could not identify a supported bed type and count.");
   return updates;
 }
 

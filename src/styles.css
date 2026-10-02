@@ -27,7 +27,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-text-on);
   --color-destructive: var(--danger-text);
-  --color-destructive-foreground: #FFFFFF;
+  --color-destructive-foreground: #ffffff;
   --color-border: var(--border);
   --color-input: var(--border);
   --color-ring: var(--accent);
@@ -59,7 +59,7 @@
   --muted: var(--surface-2);
   --muted-foreground: var(--text-2);
   --destructive: var(--danger-text);
-  --destructive-foreground: #FFFFFF;
+  --destructive-foreground: #ffffff;
   --input: var(--border);
   --ring: var(--accent);
 }
@@ -78,7 +78,7 @@
   --muted: var(--surface-2);
   --muted-foreground: var(--text-2);
   --destructive: var(--danger-text);
-  --destructive-foreground: #FFFFFF;
+  --destructive-foreground: #ffffff;
   --input: var(--border);
   --ring: var(--accent);
 }
@@ -92,27 +92,45 @@
   body {
     background-color: var(--bg);
     color: var(--text);
-    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", sans-serif;
+    font-family:
+      Inter,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Noto Sans Devanagari",
+      sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
-  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
     outline: 3px solid var(--accent) !important;
     outline-offset: 2px !important;
   }
 }
 
 /* Tabular numerals for medical monitors, timers, and bed counts */
-.tabular-nums, .bed-count, .countdown-ring, [data-tabular] {
+.tabular-nums,
+.bed-count,
+.countdown-ring,
+[data-tabular] {
   font-variant-numeric: tabular-nums;
 }
 
 /* Live data update 600ms highlight */
 @keyframes live-pulse {
-  0% { background-color: var(--ok-surface); }
-  100% { background-color: transparent; }
+  0% {
+    background-color: var(--ok-surface);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 .live-highlight {
@@ -120,7 +138,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     scroll-behavior: auto !important;
     transition: none !important;
     animation: none !important;
@@ -138,4 +158,3 @@
 .dark .leaflet-container {
   background: var(--surface-2) !important;
 }
-
