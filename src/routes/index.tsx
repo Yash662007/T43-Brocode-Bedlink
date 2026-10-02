@@ -101,10 +101,18 @@ function Index() {
         </div>
       </nav>
 
-      {/* Role Workspace Components */}
-      {activeScreen === "nurse" && <NurseScreen />}
-      {activeScreen === "hospital" && <HospitalScreen />}
-      {activeScreen === "ambulance" && <DispatchScreen />}
+      {/* Role Workspace Components — stay mounted when switching tabs so an
+          in-flight request/offer/hold (and its SSE subscription) survives
+          navigating to another role and back; only visibility toggles. */}
+      <div className={activeScreen === "nurse" ? "" : "hidden"}>
+        <NurseScreen />
+      </div>
+      <div className={activeScreen === "hospital" ? "" : "hidden"}>
+        <HospitalScreen />
+      </div>
+      <div className={activeScreen === "ambulance" ? "" : "hidden"}>
+        <DispatchScreen />
+      </div>
     </div>
   );
 }

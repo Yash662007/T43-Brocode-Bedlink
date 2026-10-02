@@ -232,8 +232,40 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletTypes.Map | null>(null);
   const markerRef = useRef<LeafletTypes.Marker | null>(null);
+  const circleRef = useRef<LeafletTypes.Circle | null>(null);
   const [pos, setPos] = useState(DEFAULT_AMBULANCE_POS);
   const [error, setError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+
+  const locateMe = () => {
+    if (!navigator.geolocation) {
+      setError("GPS is not available on this device. Tap the map to place the crew pin.");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        const newPos = {
+          lat: p.coords.latitude,
+          lng: p.coords.longitude,
+          accuracyMeters: Math.round(p.coords.accuracy),
+        };
+        setPos(newPos);
+        setError(null);
+        setIsLocating(false);
+        mapRef.current?.setView([newPos.lat, newPos.lng], 15);
+        markerRef.current?.setLatLng([newPos.lat, newPos.lng]);
+        circleRef.current?.setLatLng([newPos.lat, newPos.lng]);
+        circleRef.current?.setRadius(newPos.accuracyMeters);
+        onLocationSelect?.(newPos.lat, newPos.lng);
+      },
+      () => {
+        setIsLocating(false);
+        setError("GPS access denied or unavailable. Tap the map to place the crew pin.");
+      },
+      { enableHighAccuracy: true, timeout: 5000 },
+    );
+  };
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -277,6 +309,7 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
           fillOpacity: 0.15,
           weight: 1,
         }).addTo(map);
+        circleRef.current = circle;
 
         map.on("click", (e) => {
           marker.setLatLng(e.latlng);
@@ -292,29 +325,8 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
           onLocationSelect?.(ll.lat, ll.lng);
         });
 
-        // Attempt GPS locate
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (p) => {
-              if (cancelled) return;
-              const newPos = {
-                lat: p.coords.latitude,
-                lng: p.coords.longitude,
-                accuracyMeters: Math.round(p.coords.accuracy),
-              };
-              setPos(newPos);
-              map.setView([newPos.lat, newPos.lng], 15);
-              marker.setLatLng([newPos.lat, newPos.lng]);
-              circle.setLatLng([newPos.lat, newPos.lng]);
-              circle.setRadius(newPos.accuracyMeters);
-            },
-            () => {
-              if (cancelled) return;
-              setError("GPS access denied or unavailable. Tap map to place crew pin.");
-            },
-            { enableHighAccuracy: true, timeout: 5000 },
-          );
-        }
+        // Attempt GPS locate on first load.
+        if (!cancelled) locateMe();
       } catch {
         if (!cancelled) {
           setError("Map preview unavailable. Tap map to place crew pin.");
@@ -346,6 +358,18 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
           <MapPin className="h-3.5 w-3.5 text-[var(--accent)]" />
           <span>GPS Accuracy: ~{pos.accuracyMeters}m (Tap to drop pin)</span>
         </div>
+        <button
+          type="button"
+          onClick={locateMe}
+          disabled={isLocating}
+          aria-label="Locate me"
+          className="absolute top-2 right-2 z-10 inline-flex min-h-[48px] min-w-[48px] items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)]/95 text-[var(--text)] shadow-xs backdrop-blur-xs transition-colors hover:bg-[var(--surface-2)] disabled:opacity-50"
+        >
+          <RefreshCw
+            className={`h-5 w-5 text-[var(--accent)] ${isLocating ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
       </div>
       {error && (
         <div className="flex items-center gap-2 text-xs font-medium text-[var(--warn-text)]">
