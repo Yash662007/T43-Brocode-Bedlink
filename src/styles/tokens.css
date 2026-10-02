@@ -1,0 +1,88 @@
+/* BedLink Clinical Design Tokens */
+
+:root {
+  /* Base Surfaces & Borders */
+  --bg: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #EEF1F5;
+  --border: #D5DBE3;
+
+  /* Typography */
+  --text: #0F1720;
+  --text-2: #465263;
+
+  /* Accent & Action */
+  --accent: #0A5CC7;
+  --accent-text-on: #FFFFFF;
+
+  /* Status Colors: Text & Surface Pairs */
+  --ok-text: #0F7B3F;
+  --ok-surface: #E6F4EC;
+
+  --warn-text: #8A5300;
+  --warn-surface: #FFF1D6;
+
+  --danger-text: #B42318;
+  --danger-surface: #FDECEA;
+
+  --unknown-text: #566070;
+  --unknown-surface: #E9ECF1;
+
+  /* Sizing, Radii, Shadows */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --shadow-clinical: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg: #0E1318;
+    --surface: #161D24;
+    --surface-2: #1D262F;
+    --border: #2A343F;
+
+    --text: #E8EDF2;
+    --text-2: #A8B3BF;
+
+    --accent: #6AA6FF;
+    --accent-text-on: #0A1424;
+
+    --ok-text: #4CC38A;
+    --ok-surface: #12301F;
+
+    --warn-text: #F2B24C;
+    --warn-surface: #3A2A0C;
+
+    --danger-text: #FF7A6E;
+    --danger-surface: #3C1713;
+
+    --unknown-text: #9AA6B4;
+    --unknown-surface: #232C36;
+  }
+}
+
+.dark {
+  --bg: #0E1318;
+  --surface: #161D24;
+  --surface-2: #1D262F;
+  --border: #2A343F;
+
+  --text: #E8EDF2;
+  --text-2: #A8B3BF;
+
+  --accent: #6AA6FF;
+  --accent-text-on: #0A1424;
+
+  --ok-text: #4CC38A;
+  --ok-surface: #12301F;
+
+  --warn-text: #F2B24C;
+  --warn-surface: #3A2A0C;
+
+  --danger-text: #FF7A6E;
+  --danger-surface: #3C1713;
+
+  --unknown-text: #9AA6B4;
+  --unknown-surface: #232C36;
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -8,24 +8,32 @@ import {
   CircleAlert,
   Droplets,
   HeartPulse,
-  Languages,
-  Minus,
-  Moon,
-  Plus,
   History,
+  Minus,
+  PenLine,
+  Plus,
   RotateCcw,
-  RefreshCw,
-  Sun,
   Wind,
-  Wifi,
-  WifiOff,
-  Sparkles,
+  X,
 } from "lucide-react";
 import { nurseBeds, type BedRow, type BedType } from "@/lib/bedlink-fixtures";
 import { reviewBedAvailabilityNote } from "@/lib/bed-update-extraction.functions";
-import { getCityGeneralInventoryHistory, recordAiProposedInventoryUpdate, saveCityGeneralInventory } from "@/lib/hospital-inventory.functions";
+import {
+  getCityGeneralInventoryHistory,
+  recordAiProposedInventoryUpdate,
+  saveCityGeneralInventory,
+} from "@/lib/hospital-inventory.functions";
 import type { InventoryAuditEvent } from "@/lib/hospital-inventory";
 import en from "@/locales/en.json";
+import {
+  AppBar,
+  BottomActionBar,
+  ClinicalToast,
+  FreshnessBadge,
+  OfflineBanner,
+  SimulatedBadge,
+  StatusBadge,
+} from "./clinical/shared-components";
 
 type Theme = "light" | "dark";
 
@@ -45,62 +53,97 @@ const bedNames: Record<BedType, string> = {
   burns: "Burns",
 };
 
-function FreshnessBadge({ row }: { row: BedRow }) {
-  const noData = row.updatedAt === "No data";
-  const age = Number.parseInt(row.updatedAt, 10);
-  const tone = noData ? "unknown" : age < 15 ? "ok" : age <= 45 ? "warn" : "danger";
-  const label = noData ? en.noData : age > 45 ? `${en.stale}, ${row.updatedAt}` : `${en.updated} ${row.updatedAt}`;
-  return <span className={`freshness freshness-${tone}`}><span aria-hidden="true">{tone === "ok" ? "●" : tone === "warn" ? "▲" : "!"}</span>{label}</span>;
-}
-
-function StatusButton({ label, children, onClick, active }: { label: string; children: React.ReactNode; onClick: () => void; active?: boolean }) {
-  return <button type="button" aria-label={label} onClick={onClick} className={`tool-button${active ? " tool-button-active" : ""}`}>{children}</button>;
-}
-
 export function NurseScreen() {
   const [beds, setBeds] = useState(nurseBeds);
   const [simple, setSimple] = useState(false);
   const [offline, setOffline] = useState(false);
   const [theme, setTheme] = useState<Theme>("light");
-  const [nurseName, setNurseName] = useState("Nurse Patel");
+  const [nurseName, setNurseName] = useState(en.defaultNurseName);
   const [toast, setToast] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [recentlyUpdatedBed, setRecentlyUpdatedBed] = useState<BedType | null>(null);
+  const [previousBedState, setPreviousBedState] = useState<BedRow[] | null>(null);
+
+  // Type an update sheet state
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [note, setNote] = useState("");
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [suggestedUpdates, setSuggestedUpdates] = useState<Array<{ bedType: BedType; free: number; availability: "available" | "unavailable" }>>([]);
+  const [suggestedUpdates, setSuggestedUpdates] = useState<
+    Array<{ bedType: BedType; free: number; availability: "available" | "unavailable" }>
+  >([]);
+
+  // History timeline view state
+  const [showHistory, setShowHistory] = useState(false);
   const [historyNurseFilter, setHistoryNurseFilter] = useState("all");
   const [historySourceFilter, setHistorySourceFilter] = useState("all");
   const [historyFromDate, setHistoryFromDate] = useState("");
   const [historyToDate, setHistoryToDate] = useState("");
+
   const queryClient = useQueryClient();
   const saveInventory = useServerFn(saveCityGeneralInventory);
   const recordProposal = useServerFn(recordAiProposedInventoryUpdate);
   const loadHistory = useServerFn(getCityGeneralInventoryHistory);
+
   const { data: history = [], isLoading: isHistoryLoading } = useQuery({
     queryKey: ["inventory-history", "city-general"],
     queryFn: () => loadHistory(),
   });
+
   const inventoryMutation = useMutation({
-    mutationFn: ({ nextBeds, eventType }: { nextBeds: BedRow[]; eventType: "nurse_applied" | "restored" }) => saveInventory({ data: { beds: nextBeds.map((row) => ({ bedType: row.bedType, free: row.free })), eventType, nurseName: nurseName.trim() || en.defaultNurseName } }),
+    mutationFn: ({
+      nextBeds,
+      eventType,
+    }: {
+      nextBeds: BedRow[];
+      eventType: "nurse_applied" | "restored";
+    }) =>
+      saveInventory({
+        data: {
+          beds: nextBeds.map((row) => ({ bedType: row.bedType, free: row.free })),
+          eventType,
+          nurseName: nurseName.trim() || en.defaultNurseName,
+        },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hospital-inventory", "city-general"] });
       queryClient.invalidateQueries({ queryKey: ["inventory-history", "city-general"] });
-      setLastUpdate(en.inventoryShared);
-      window.setTimeout(() => setLastUpdate(null), 4000);
+      setToast(en.inventoryShared);
     },
     onError: () => setToast(en.inventoryError),
   });
 
   const updateBed = (bedType: BedType, nextValue: number) => {
-    setBeds((current) => current.map((row) => row.bedType === bedType ? { ...row, free: Math.max(0, nextValue), updatedAt: "Just now" } : row));
-    const text = `${bedNames[bedType]}: ${Math.max(0, nextValue)} ${en.free}.`;
+    const clamped = Math.max(0, nextValue);
+    setPreviousBedState(beds);
+    setRecentlyUpdatedBed(bedType);
+
+    setBeds((current) =>
+      current.map((row) =>
+        row.bedType === bedType
+          ? { ...row, free: clamped, updatedAt: en.justNow }
+          : row
+      )
+    );
+
+    const text = `${bedNames[bedType]}: ${clamped} ${en.free}.`;
     setToast(text);
-    window.setTimeout(() => setToast(null), 5000);
+
+    setTimeout(() => {
+      setRecentlyUpdatedBed(null);
+    }, 600);
+
     navigator.vibrate?.(10);
   };
 
-  const confirm = () => {
+  const handleUndo = () => {
+    if (previousBedState) {
+      setBeds(previousBedState);
+      setPreviousBedState(null);
+      setToast(null);
+    }
+  };
+
+  const confirmEverythingCorrect = () => {
     inventoryMutation.mutate({ nextBeds: beds, eventType: "nurse_applied" });
   };
 
@@ -111,11 +154,13 @@ export function NurseScreen() {
     try {
       const result = await reviewBedAvailabilityNote({ data: { note } });
       setSuggestedUpdates(result);
-      const changes = result.map((update) => ({
-        bedType: update.bedType,
-        previousFree: beds.find((row) => row.bedType === update.bedType)?.free ?? 0,
-        nextFree: update.free,
-      })).filter((change) => change.previousFree !== change.nextFree);
+      const changes = result
+        .map((update) => ({
+          bedType: update.bedType,
+          previousFree: beds.find((row) => row.bedType === update.bedType)?.free ?? 0,
+          nextFree: update.free,
+        }))
+        .filter((change) => change.previousFree !== change.nextFree);
       if (changes.length > 0) {
         await recordProposal({ data: { changes } });
         queryClient.invalidateQueries({ queryKey: ["inventory-history", "city-general"] });
@@ -130,25 +175,29 @@ export function NurseScreen() {
   const applySuggestedUpdates = () => {
     const nextBeds = beds.map((row) => {
       const update = suggestedUpdates.find((suggestion) => suggestion.bedType === row.bedType);
-      return update ? { ...row, free: update.free, updatedAt: "Just now" } : row;
+      return update ? { ...row, free: update.free, updatedAt: en.justNow } : row;
     });
     setBeds(nextBeds);
     inventoryMutation.mutate({ nextBeds, eventType: "nurse_applied" });
     setToast(en.aiApplied);
     setSuggestedUpdates([]);
     setNote("");
+    setSheetOpen(false);
   };
 
   const restoreHistoryEvent = (event: InventoryAuditEvent) => {
     const nextBeds = beds.map((row) => {
       const change = event.changes.find((entry) => entry.bedType === row.bedType);
-      return change ? { ...row, free: change.previousFree, updatedAt: "Just now" } : row;
+      return change ? { ...row, free: change.previousFree, updatedAt: en.justNow } : row;
     });
     setBeds(nextBeds);
     inventoryMutation.mutate({ nextBeds, eventType: "restored" });
   };
 
-  const nurseFilterOptions = Array.from(new Set(history.map((event) => event.nurseName).filter((name): name is string => Boolean(name))));
+  const nurseFilterOptions = Array.from(
+    new Set(history.map((event) => event.nurseName).filter((name): name is string => Boolean(name)))
+  );
+
   const filteredHistory = history.filter((event) => {
     const eventDate = event.createdAt.slice(0, 10);
     const matchesNurse = historyNurseFilter === "all" || event.nurseName === historyNurseFilter;
@@ -157,73 +206,373 @@ export function NurseScreen() {
     const isBeforeEnd = !historyToDate || eventDate <= historyToDate;
     return matchesNurse && matchesSource && isAfterStart && isBeforeEnd;
   });
-  const clearHistoryFilters = () => {
-    setHistoryNurseFilter("all");
-    setHistorySourceFilter("all");
-    setHistoryFromDate("");
-    setHistoryToDate("");
-  };
 
   return (
-    <main className={`nurse-page${theme === "dark" ? " dark" : ""}`}>
-      <header className="app-bar">
-        <div className="app-id"><BedDouble aria-hidden="true" /><span>{en.appName}</span></div>
-        <div className="app-tools">
-          <StatusButton label="Toggle connection status" onClick={() => setOffline((value) => !value)} active={offline}>
-            {offline ? <WifiOff aria-hidden="true" /> : <Wifi aria-hidden="true" />}<span className="connection-label">{offline ? en.offline : en.live}</span>
-          </StatusButton>
-          <StatusButton label={en.language} onClick={() => undefined}><Languages aria-hidden="true" /></StatusButton>
-          <StatusButton label={en.theme} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}>{theme === "light" ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}</StatusButton>
-        </div>
-      </header>
+    <div className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}>
+      {/* 1. Global Clinical App Bar */}
+      <AppBar
+        title={en.appName}
+        subtitle={`${en.hospital} · ${en.hospitalUnit}`}
+        connectionState={offline ? "offline" : "live"}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+      />
 
-      {offline && <div className="offline-banner" role="status"><WifiOff aria-hidden="true" />{en.offlineMessage}<span>{en.waiting}: 2</span></div>}
+      {/* Offline Alert Banner */}
+      {offline && <OfflineBanner queueCount={2} />}
 
-      <section className="nurse-heading" aria-labelledby="screen-title">
-        <p className="eyebrow">{en.hospital}</p>
-        <div className="heading-line"><h1 id="screen-title">{en.nurseTitle}</h1><button type="button" className={`mode-switch${simple ? " mode-switch-on" : ""}`} onClick={() => setSimple((value) => !value)} aria-pressed={simple}><span aria-hidden="true" />{en.simpleCounts}</button></div>
-        <p className="hint-text">{en.hint} {en.hintConfirm}</p>
-        <label className="nurse-name-field"><span>{en.nurseNameLabel}</span><input value={nurseName} onChange={(event) => setNurseName(event.target.value)} maxLength={80} /></label>
-      </section>
-
-      <section className="ai-update" aria-labelledby="ai-update-title">
-        <div className="ai-update-heading"><Sparkles aria-hidden="true" /><div><h2 id="ai-update-title">{en.aiUpdateTitle}</h2><p>{en.aiUpdateHint}</p></div></div>
-        <label className="sr-only" htmlFor="bed-update-note">{en.aiUpdateTitle}</label>
-        <textarea id="bed-update-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder={en.aiUpdateExample} rows={3} />
-        <button type="button" className="ai-review-button" onClick={reviewNote} disabled={!note.trim() || isReviewing}>{isReviewing ? en.aiReviewing : en.aiReview}</button>
-        {reviewError && <p className="ai-review-error" role="alert">{reviewError}</p>}
-        {suggestedUpdates.length > 0 && <div className="ai-review-result" aria-live="polite"><p>{en.aiReviewReady}</p><ul>{suggestedUpdates.map((update) => <li key={update.bedType}><strong>{bedNames[update.bedType]}</strong><span>{update.free} {en.free} · {update.availability === "available" ? en.aiAvailable : en.aiUnavailable}</span></li>)}</ul><div><button type="button" className="ai-cancel-button" onClick={() => setSuggestedUpdates([])}>{en.aiCancel}</button><button type="button" className="ai-apply-button" onClick={applySuggestedUpdates}>{en.aiApply}</button></div></div>}
-      </section>
-
-      <section className="bed-list" aria-label="Free beds by type">
-        {beds.map((row) => {
-          const Icon = bedIcons[row.bedType];
-          return <article className="bed-row" key={row.bedType}>
-            <div className="bed-label"><Icon aria-hidden="true" /><div><h2>{bedNames[row.bedType]}</h2><FreshnessBadge row={row} />{row.source === "sim_feed" && <span className="simulated">{en.simulated}</span>}</div></div>
-            {simple ? <div className="simple-controls" aria-label={`${bedNames[row.bedType]} quick count`}>
-              {[0, 1, 3].map((value) => <button type="button" key={value} onClick={() => updateBed(row.bedType, value)} className={row.free === value || (value === 3 && row.free >= 3) ? "simple-selected" : ""}>{value === 3 ? "3+" : value === 1 ? "1–2" : "0"}</button>)}
-            </div> : <div className="stepper"><StatusButton label={en.decrease.replace("{bed}", bedNames[row.bedType])} onClick={() => updateBed(row.bedType, row.free - 1)}><Minus aria-hidden="true" /></StatusButton><p className="bed-count" aria-label={`${row.free} ${en.free}`}>{row.free}<span>{en.free}</span></p><StatusButton label={en.increase.replace("{bed}", bedNames[row.bedType])} onClick={() => updateBed(row.bedType, row.free + 1)}><Plus aria-hidden="true" /></StatusButton></div>}
-          </article>;
-        })}
-      </section>
-
-      <section className="inventory-history" aria-labelledby="inventory-history-title">
-        <div className="inventory-history-heading"><History aria-hidden="true" /><div><h2 id="inventory-history-title">{en.historyTitle}</h2><p>{en.historyHint}</p></div></div>
-        {history.length > 0 && <div className="history-filters" aria-label={en.historyFiltersLabel}>
-          <div className="history-filter-fields">
-            <label><span>{en.historyFilterNurse}</span><select value={historyNurseFilter} onChange={(event) => setHistoryNurseFilter(event.target.value)}><option value="all">{en.historyAllNurses}</option>{nurseFilterOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-            <label><span>{en.historyFilterSource}</span><select value={historySourceFilter} onChange={(event) => setHistorySourceFilter(event.target.value)}><option value="all">{en.historyAllSources}</option><option value="ai">{en.historySourceAi}</option><option value="manual">{en.historySourceManual}</option><option value="restore">{en.historySourceRestore}</option></select></label>
-            <label><span>{en.historyFilterFrom}</span><input type="date" value={historyFromDate} onChange={(event) => setHistoryFromDate(event.target.value)} max={historyToDate || undefined} /></label>
-            <label><span>{en.historyFilterTo}</span><input type="date" value={historyToDate} onChange={(event) => setHistoryToDate(event.target.value)} min={historyFromDate || undefined} /></label>
+      <main className="mx-auto max-w-lg px-4 pt-4 pb-32 sm:px-6">
+        {/* Screen Header & Mode Toggle */}
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--text)]">
+              {en.nurseTitle}
+            </h1>
+            <p className="mt-1 text-sm text-[var(--text-2)]">{en.hint}</p>
           </div>
-          {(historyNurseFilter !== "all" || historySourceFilter !== "all" || historyFromDate || historyToDate) && <button type="button" className="history-clear-filters" onClick={clearHistoryFilters}>{en.historyClearFilters}</button>}
-        </div>}
-        {isHistoryLoading ? <p className="history-empty">{en.historyLoading}</p> : history.length === 0 ? <p className="history-empty">{en.historyEmpty}</p> : filteredHistory.length === 0 ? <p className="history-empty">{en.historyNoResults}</p> : <ol className="history-list">{filteredHistory.map((event) => <li key={event.id}><div><strong>{event.eventType === "ai_proposed" ? en.historyAiProposed : event.eventType === "restored" ? en.historyRestored : en.historyNurseApplied}</strong><span>{new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(event.createdAt))} · {event.source === "ai" ? en.historySourceAi : event.source === "restore" ? en.historySourceRestore : en.historySourceManual}</span><p>{event.source === "ai" ? en.historyActorAi : `${en.historyChangedBy} ${event.nurseName ?? en.defaultNurseName}`}</p><p>{event.changes.map((change) => `${bedNames[change.bedType]} ${change.previousFree} → ${change.nextFree}`).join(" · ")}</p></div>{event.eventType !== "ai_proposed" && <button type="button" className="history-restore" disabled={inventoryMutation.isPending} onClick={() => restoreHistoryEvent(event)}><RotateCcw aria-hidden="true" />{en.historyRestore}</button>}</li>)}</ol>}
-      </section>
 
-      <div className="bottom-action"><button type="button" onClick={confirm} className="confirm-button" disabled={inventoryMutation.isPending}><Check aria-hidden="true" />{inventoryMutation.isPending ? en.savingInventory : en.correct}</button></div>
-      {toast && <div className="toast" role="status"><span>{toast}</span><button type="button" onClick={() => setToast(null)}>{en.undo}</button></div>}
-      {lastUpdate && <div className="toast" role="status"><RefreshCw aria-hidden="true" /><span>{lastUpdate}</span></div>}
-    </main>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSimple((s) => !s)}
+              className={`inline-flex min-h-[48px] items-center rounded-lg border px-3 text-sm font-semibold transition-colors ${
+                simple
+                  ? "border-[var(--accent)] bg-[var(--surface-2)] text-[var(--accent)]"
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+              }`}
+              aria-pressed={simple}
+            >
+              {en.simpleCounts}
+            </button>
+          </div>
+        </div>
+
+        {/* Secondary: Type an update trigger (collapsed by default) */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--text)] shadow-clinical transition-colors hover:bg-[var(--surface-2)]"
+          >
+            <PenLine className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
+            <span>{en.typeAnUpdate}</span>
+          </button>
+        </div>
+
+        {/* 2. Structured Bed Cards */}
+        <section className="flex flex-col gap-3" aria-label="Free beds by type">
+          {beds.map((row) => {
+            const Icon = bedIcons[row.bedType];
+            const isHighlight = recentlyUpdatedBed === row.bedType;
+            const statusType = row.free === 0 ? "none" : row.free <= 2 ? "low" : "available";
+
+            return (
+              <article
+                key={row.bedType}
+                className={`flex items-center justify-between gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-clinical transition-all ${
+                  isHighlight ? "live-highlight" : ""
+                }`}
+              >
+                {/* Left: Acuity Icon + Label + Badges */}
+                <div className="flex flex-col gap-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" strokeWidth={2} />
+                    <h2 className="text-lg font-bold text-[var(--text)] truncate">
+                      {bedNames[row.bedType]}
+                    </h2>
+                    {row.source === "sim_feed" && <SimulatedBadge />}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <FreshnessBadge updatedAtText={row.updatedAt} />
+                    <StatusBadge status={statusType} />
+                  </div>
+                </div>
+
+                {/* Center: Count at 48px bold */}
+                <div className="flex flex-col items-center justify-center px-2">
+                  <span className="text-5xl font-bold tracking-tight text-[var(--text)] tabular-nums bed-count">
+                    {row.free}
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--text-2)] uppercase">
+                    {en.free}
+                  </span>
+                </div>
+
+                {/* Right: Stepper Controls (64px minus and plus) */}
+                {simple ? (
+                  <div className="flex items-center gap-2" aria-label={`${bedNames[row.bedType]} quick count`}>
+                    {[0, 1, 3].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => updateBed(row.bedType, val)}
+                        className={`inline-flex min-h-[48px] min-w-[48px] items-center justify-center rounded-lg border text-base font-bold transition-all ${
+                          row.free === val || (val === 3 && row.free >= 3)
+                            ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-text-on)]"
+                            : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+                        }`}
+                      >
+                        {val === 3 ? "3+" : val === 1 ? "1–2" : "0"}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateBed(row.bedType, row.free - 1)}
+                      disabled={row.free === 0}
+                      aria-label={en.decrease.replace("{bed}", bedNames[row.bedType])}
+                      className="inline-flex min-h-[64px] min-w-[64px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] shadow-xs transition-colors hover:bg-[var(--surface-2)] active:scale-95 disabled:opacity-40"
+                    >
+                      <Minus className="h-6 w-6" aria-hidden="true" strokeWidth={2.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateBed(row.bedType, row.free + 1)}
+                      aria-label={en.increase.replace("{bed}", bedNames[row.bedType])}
+                      className="inline-flex min-h-[64px] min-w-[64px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] shadow-xs transition-colors hover:bg-[var(--surface-2)] active:scale-95"
+                    >
+                      <Plus className="h-6 w-6" aria-hidden="true" strokeWidth={2.5} />
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
+
+        {/* 3. Secondary: Update History Link (never above bed cards) */}
+        <div className="mt-8 border-t border-[var(--border)] pt-4 text-center">
+          <button
+            type="button"
+            onClick={() => setShowHistory((h) => !h)}
+            className="inline-flex min-h-[48px] items-center gap-2 text-sm font-semibold text-[var(--accent)] hover:underline"
+          >
+            <History className="h-4 w-4" aria-hidden="true" />
+            <span>{en.historyTitle}</span>
+          </button>
+        </div>
+
+        {/* Vertical History Timeline (Collapsible) */}
+        {showHistory && (
+          <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-clinical" aria-labelledby="history-title">
+            <h2 id="history-title" className="text-base font-bold text-[var(--text)]">
+              {en.historyTitle}
+            </h2>
+            <p className="mt-0.5 text-xs text-[var(--text-2)]">{en.historyHint}</p>
+
+            {/* Filter controls */}
+            {history.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 gap-2 border-b border-[var(--border)] pb-4">
+                <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--text-2)]">
+                  <span>{en.historyFilterNurse}</span>
+                  <select
+                    value={historyNurseFilter}
+                    onChange={(e) => setHistoryNurseFilter(e.target.value)}
+                    className="min-h-[48px] rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-sm text-[var(--text)]"
+                  >
+                    <option value="all">{en.historyAllNurses}</option>
+                    {nurseFilterOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold text-[var(--text-2)]">
+                  <span>{en.historyFilterSource}</span>
+                  <select
+                    value={historySourceFilter}
+                    onChange={(e) => setHistorySourceFilter(e.target.value)}
+                    className="min-h-[48px] rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-sm text-[var(--text)]"
+                  >
+                    <option value="all">{en.historyAllSources}</option>
+                    <option value="ai">{en.historySourceAi}</option>
+                    <option value="manual">{en.historySourceManual}</option>
+                    <option value="restore">{en.historySourceRestore}</option>
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {/* Timeline list */}
+            {isHistoryLoading ? (
+              <p className="py-6 text-center text-sm text-[var(--text-2)]">{en.historyLoading}</p>
+            ) : history.length === 0 ? (
+              <p className="py-6 text-center text-sm text-[var(--text-2)]">{en.historyEmpty}</p>
+            ) : filteredHistory.length === 0 ? (
+              <p className="py-6 text-center text-sm text-[var(--text-2)]">{en.historyNoResults}</p>
+            ) : (
+              <ol className="mt-4 flex flex-col gap-3">
+                {filteredHistory.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-start justify-between gap-4 border-b border-[var(--border)] pb-3 last:border-0"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-bold text-[var(--text)]">
+                        {item.eventType === "ai_proposed"
+                          ? en.historyAiProposed
+                          : item.eventType === "restored"
+                          ? en.historyRestored
+                          : en.historyNurseApplied}
+                      </span>
+                      <span className="text-xs text-[var(--text-2)] tabular-nums">
+                        {new Intl.DateTimeFormat(undefined, {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          day: "numeric",
+                          month: "short",
+                        }).format(new Date(item.createdAt))}{" "}
+                        · {item.nurseName || en.defaultNurseName}
+                      </span>
+                      <p className="text-xs text-[var(--text-2)] font-medium tabular-nums">
+                        {item.changes
+                          .map((c) => `${bedNames[c.bedType]} ${c.previousFree} → ${c.nextFree}`)
+                          .join(" · ")}
+                      </p>
+                    </div>
+
+                    {item.eventType !== "ai_proposed" && (
+                      <button
+                        type="button"
+                        onClick={() => restoreHistoryEvent(item)}
+                        disabled={inventoryMutation.isPending}
+                        className="inline-flex min-h-[48px] items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--border)] active:scale-95"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>{en.historyRestore}</span>
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
+      </main>
+
+      {/* 4. Type an Update Sheet / Modal */}
+      {sheetOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sheet-title"
+          className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-xs p-0 sm:p-4"
+        >
+          <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+              <h2 id="sheet-title" className="text-lg font-bold text-[var(--text)]">
+                {en.aiUpdateTitle}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="inline-flex min-h-[48px] min-w-[48px] items-center justify-center rounded-lg text-[var(--text-2)] hover:text-[var(--text)]"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <p className="mt-2 text-sm text-[var(--text-2)]">{en.aiUpdateHint}</p>
+
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={en.aiUpdateExample}
+              rows={3}
+              className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text)] placeholder:text-[var(--text-2)] focus:outline-none"
+            />
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
+              >
+                {en.aiCancel}
+              </button>
+              <button
+                type="button"
+                onClick={reviewNote}
+                disabled={!note.trim() || isReviewing}
+                className="inline-flex min-h-[48px] items-center rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-text-on)] transition-opacity disabled:opacity-50"
+              >
+                {isReviewing ? en.aiReviewing : en.aiReview}
+              </button>
+            </div>
+
+            {reviewError && (
+              <p className="mt-3 text-sm font-medium text-[var(--danger-text)]" role="alert">
+                {reviewError}
+              </p>
+            )}
+
+            {/* Suggested updates review preview */}
+            {suggestedUpdates.length > 0 && (
+              <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                <h3 className="text-sm font-bold text-[var(--text)]">{en.aiReviewReady}</h3>
+                <ul className="mt-2 flex flex-col gap-2">
+                  {suggestedUpdates.map((update) => (
+                    <li
+                      key={update.bedType}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="font-semibold text-[var(--text)]">{bedNames[update.bedType]}</span>
+                      <span className="tabular-nums text-[var(--text-2)]">
+                        {update.free} {en.free} ·{" "}
+                        {update.availability === "available" ? en.aiAvailable : en.aiUnavailable}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSuggestedUpdates([])}
+                    className="inline-flex min-h-[48px] items-center rounded-lg border border-[var(--border)] px-3 text-sm font-semibold text-[var(--text)] hover:bg-[var(--surface)]"
+                  >
+                    {en.aiCancel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applySuggestedUpdates}
+                    className="inline-flex min-h-[48px] items-center rounded-lg bg-[var(--ok-text)] px-4 text-sm font-semibold text-white shadow-xs"
+                  >
+                    {en.aiApply}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Sticky Primary Bottom Action: "Everything is correct" (64px height) */}
+      <BottomActionBar>
+        <button
+          type="button"
+          onClick={confirmEverythingCorrect}
+          disabled={inventoryMutation.isPending}
+          className="inline-flex min-h-[64px] w-full max-w-md items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-6 text-base font-bold text-[var(--accent-text-on)] shadow-clinical transition-transform active:scale-[0.99] disabled:opacity-50"
+        >
+          <Check className="h-6 w-6" aria-hidden="true" strokeWidth={2.5} />
+          <span>{inventoryMutation.isPending ? en.savingInventory : en.correct}</span>
+        </button>
+      </BottomActionBar>
+
+      {/* Toast with Undo */}
+      {toast && (
+        <ClinicalToast
+          message={toast}
+          onUndo={previousBedState ? handleUndo : undefined}
+          onClose={() => setToast(null)}
+        />
+      )}
+    </div>
   );
 }

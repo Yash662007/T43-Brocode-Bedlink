@@ -1,11 +1,17 @@
-# BedLink design system
+# BedLink Clinical Design System
 
-BedLink is a calm, safety-first operational UI for care coordination. The interface emphasizes a single urgent task at a time, large numerical values, clear text labels, and status that never relies on color alone.
+## Principles
+1. **Calm & High-Reliability**: Soft slate surfaces, clear non-distracting visual boundaries, generous spacing. Not a startup landing page.
+2. **Clinical Legibility**: Minimum font size 14px. Tabular numerals on all counts, times, and countdowns. The primary number is always the largest element.
+3. **WCAG AA Verification**: Body text > 4.5:1, UI components and large text > 3:1.
+4. **Safety-First Touch Targets**: Interactive targets ≥ 48px; high-acuity actions (triage accept, steppers) 56px–64px with ≥ 8px spacing.
+5. **No Emojis & No Forbidden Styling**: Lucide 24px/2px icons only. Never use color alone for status. Single subtle elevation shadow `0 1px 2px rgba(0,0,0,0.08)`.
 
 ## Tokens
-
-The global BedLink design tokens in `src/styles.css` use the supplied light and dark values. Controls are 8px, cards 12px, and pills fully rounded. Typography uses the required Inter/system stack and 14–64px scale. The only shadow is a 0 1px 2px treatment.
-
-## Accessibility
-
-Body and supporting copy use high-contrast foreground tokens. Status badges pair an icon and text with their color. Focus uses a 3px accent outline with a 2px offset. All nurse actions are at least 48px; primary confirmation is 64px. Motion is disabled for reduced-motion users.
+- **Surfaces**: `--bg`, `--surface`, `--surface-2`, `--border`
+- **Typography**: `--text`, `--text-2`
+- **Accent**: `--accent`, `--accent-text-on`
+- **Semantic Status**: `--ok-text`/`--ok-surface`, `--warn-text`/`--warn-surface`, `--danger-text`/`--danger-surface`, `--unknown-text`/`--unknown-surface`
+- **Radii**: 8px (controls), 12px (cards), 999px (pills)
+- **Spacing Scale**: 4, 8, 12, 16, 24, 32, 48px
+- **Type Scale**: 14, 16, 20, 24, 32, 48, 64px
