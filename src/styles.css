@@ -129,3 +129,13 @@
     animation: none !important;
   }
 }
+
+/* Dimmed clinical map tile style in dark mode */
+.dark .leaflet-tile-pane {
+  filter: brightness(0.65) invert(1) contrast(1.5) hue-rotate(200deg) saturate(0.3);
+}
+
+.dark .leaflet-container {
+  background: var(--surface-2) !important;
+}
+
