@@ -1,0 +1,8 @@
+- BedLink visual copy is centralized in locale modules, while fixtures remain separate so a future data source can replace them without changing the UI.
+- BedLink role-specific screens are isolated components, so the active review screen can change without altering shared data or application structure.
+- BedLink’s review selector is contained in the home route, so all three role-specific workflows can be previewed without changing their screen components.
+- BedLink AI-assisted nurse updates are parsed server-side and always require a visual review plus explicit apply action before fixture state changes.
+- BedLink’s shared inventory is persisted in a database and ambulance availability reads the same confirmed hospital counts.
+- BedLink records AI proposals, nurse-applied changes, and restores in immutable inventory audit history so prior counts can be reviewed and restored.
+- BedLink audit entries capture their source and nurse attribution so a shared inventory change can always be traced to AI review, a manual nurse update, or a restore.
+- BedLink audit history filters are applied to loaded immutable events, keeping the shared audit record unchanged while staff narrow their review.
