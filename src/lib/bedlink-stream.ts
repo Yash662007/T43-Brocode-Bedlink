@@ -28,6 +28,13 @@ export type OutcomeEvent = { requestId: string; status: RequestStatus };
 
 export type SpecialistEvent = { hospitalId: string; specialists: SpecialistStatusDto[] };
 
+export type DiversionEvent = {
+  hospitalId: string;
+  isDiverted: boolean;
+  reason?: string;
+  divertedUntil?: string;
+};
+
 export type TickEvent = {
   serverTime: string;
   offers: Array<{ offerId: string; requestId: string; hospitalId: string; remainingSeconds: number }>;
@@ -41,11 +48,16 @@ export type StreamHandlers = {
   onOutcome?: (data: OutcomeEvent) => void;
   onTick?: (data: TickEvent) => void;
   onSpecialist?: (data: SpecialistEvent) => void;
+  onDiversion?: (data: DiversionEvent) => void;
   onConnectionChange?: (state: "live" | "reconnecting") => void;
 };
 
 /** Subscribes to the BedLink SSE stream. Returns an unsubscribe function. */
 export function subscribeToBedlinkStream(handlers: StreamHandlers): () => void {
+  if (typeof EventSource === "undefined") {
+    return () => {};
+  }
+
   const source = new EventSource(`${BASE_URL}/api/stream`);
 
   source.onopen = () => handlers.onConnectionChange?.("live");
@@ -68,6 +80,8 @@ export function subscribeToBedlinkStream(handlers: StreamHandlers): () => void {
   listen("outcome", handlers.onOutcome);
   listen("tick", handlers.onTick);
   listen("specialist", handlers.onSpecialist);
+  listen("diversion", handlers.onDiversion);
 
   return () => source.close();
 }
+

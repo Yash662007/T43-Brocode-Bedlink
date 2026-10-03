@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Ambulance,
   BedDouble,
   Check,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  HeartPulse,
   Hospital,
   MapPin,
   Route as RouteIcon,
+  Siren,
 } from "lucide-react";
+
 import en from "@/locales/en.json";
 import {
   AppBar,
@@ -85,6 +89,18 @@ export function DispatchScreen() {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Pre-arrival telemetry fields
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const [acuity, setAcuity] = useState<"red" | "yellow" | "green">("yellow");
+  const [spo2, setSpo2] = useState("");
+  const [heartRate, setHeartRate] = useState("");
+  const [bpSys, setBpSys] = useState("");
+  const [bpDia, setBpDia] = useState("");
+  const [gcs, setGcs] = useState("");
+  const [patientAge, setPatientAge] = useState("");
+  const [patientGender, setPatientGender] = useState<"M" | "F" | "Other">("M");
+  const [telemetryNotes, setTelemetryNotes] = useState("");
+
   const hospitals: HospitalLocation[] = useMemo(
     () => toHospitalLocations(rankedHospitals),
     [rankedHospitals],
@@ -110,7 +126,12 @@ export function DispatchScreen() {
       },
       onHold: (hold) => {
         if (hold.requestId !== requestId) return;
-        if (hold.status === "active") setState("confirmed");
+        if (hold.status === "active") {
+          setState("confirmed");
+          void getRequestSummary(requestId)
+            .then((summary) => setRequestSummary(summary))
+            .catch(() => {});
+        }
       },
       onOutcome: (outcome) => {
         if (outcome.requestId !== requestId) return;
@@ -159,11 +180,30 @@ export function DispatchScreen() {
     setIsSending(true);
     setSendError(null);
     try {
+      const hasTelemetry = Boolean(
+        spo2 || heartRate || bpSys || gcs || telemetryNotes || patientAge,
+      );
+      const telemetryPayload = hasTelemetry
+        ? {
+            acuity,
+            spo2: spo2 ? parseInt(spo2, 10) : undefined,
+            heartRate: heartRate ? parseInt(heartRate, 10) : undefined,
+            bpSys: bpSys ? parseInt(bpSys, 10) : undefined,
+            bpDia: bpDia ? parseInt(bpDia, 10) : undefined,
+            gcs: gcs ? parseInt(gcs, 10) : undefined,
+            age: patientAge ? parseInt(patientAge, 10) : undefined,
+            gender: patientGender,
+            notes: telemetryNotes.trim() || undefined,
+          }
+        : undefined;
+
       const summary = await createRequest({
         condition,
         lat: crewLocation.lat,
         lng: crewLocation.lng,
         mode,
+        telemetry: telemetryPayload,
+        preferredHospitalId: selectedHospital?.hospitalId,
       });
       setRequestSummary(summary);
       setState("sent");
@@ -173,6 +213,7 @@ export function DispatchScreen() {
       setIsSending(false);
     }
   };
+
 
   const resetToTriage = () => {
     setState("matching");
@@ -207,7 +248,7 @@ export function DispatchScreen() {
   if (state === "matching") {
     return (
       <main
-        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] pb-32 ${theme === "dark" ? "dark" : ""}`}
+        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] pb-48 ${theme === "dark" ? "dark" : ""}`}
       >
         <AppBar
           title={en.appName}
@@ -257,11 +298,182 @@ export function DispatchScreen() {
             </span>
           </div>
 
+          {/* Patient Telemetry Collapsible Form */}
+          <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 shadow-clinical">
+            <button
+              type="button"
+              onClick={() => setTelemetryOpen((o) => !o)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-2">
+                <HeartPulse className="h-4 w-4 text-[var(--accent)]" />
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                  {en.telemetryTitle}
+                </span>
+              </div>
+              <span className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                {telemetryOpen ? "Hide" : "+ Add vitals"}
+              </span>
+            </button>
+
+            {telemetryOpen && (
+              <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border)] pt-3">
+                {/* Acuity Selector */}
+                <div>
+                  <span className="text-[11px] font-bold text-[var(--text-2)]">{en.acuityLabel}</span>
+                  <div className="mt-1 grid grid-cols-3 gap-1.5">
+                    {[
+                      {
+                        id: "red",
+                        label: "Red (Immed.)",
+                        color:
+                          "border-[var(--danger-text)] bg-[var(--danger-surface)] text-[var(--danger-text)]",
+                      },
+                      {
+                        id: "yellow",
+                        label: "Yellow (Emerg.)",
+                        color:
+                          "border-[var(--warn-text)] bg-[var(--warn-surface)] text-[var(--warn-text)]",
+                      },
+                      {
+                        id: "green",
+                        label: "Green (Urgent)",
+                        color: "border-[var(--ok-text)] bg-[var(--ok-surface)] text-[var(--ok-text)]",
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setAcuity(opt.id as any)}
+                        className={`rounded-lg border px-2 py-1.5 text-center text-xs font-bold transition-all ${
+                          acuity === opt.id
+                            ? opt.color
+                            : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vitals Grid */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.spo2Label}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 96"
+                      value={spo2}
+                      onChange={(e) => setSpo2(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.heartRateLabel}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 88"
+                      value={heartRate}
+                      onChange={(e) => setHeartRate(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.bpLabel}
+                    </label>
+                    <div className="mt-1 flex items-center gap-1">
+                      <input
+                        type="number"
+                        placeholder="120"
+                        value={bpSys}
+                        onChange={(e) => setBpSys(e.target.value)}
+                        className="w-1/2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                      />
+                      <span>/</span>
+                      <input
+                        type="number"
+                        placeholder="80"
+                        value={bpDia}
+                        onChange={(e) => setBpDia(e.target.value)}
+                        className="w-1/2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.gcsLabel}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="15"
+                      min={3}
+                      max={15}
+                      value={gcs}
+                      onChange={(e) => setGcs(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Age & Gender */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.patientAge}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 58"
+                      value={patientAge}
+                      onChange={(e) => setPatientAge(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                      {en.patientGender}
+                    </label>
+                    <select
+                      value={patientGender}
+                      onChange={(e) => setPatientGender(e.target.value as any)}
+                      className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-bold text-[var(--text)] focus:outline-none"
+                    >
+                      <option value="M">{en.genderM}</option>
+                      <option value="F">{en.genderF}</option>
+                      <option value="Other">{en.genderOther}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="text-[11px] font-semibold text-[var(--text-2)]">
+                    {en.telemetryNotes}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 12-lead anterior STEMI, Aspirin 325mg given"
+                    value={telemetryNotes}
+                    onChange={(e) => setTelemetryNotes(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs text-[var(--text)] focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="mt-4">
             <DispatchStepAMap
               onLocationSelect={(lat, lng) => setCrewLocation({ lat, lng })}
             />
           </div>
+
 
           {rankError && (
             <p className="mt-3 text-sm font-medium text-[var(--danger-text)]" role="alert">
@@ -302,7 +514,7 @@ export function DispatchScreen() {
   if (state === "options" && selectedHospital) {
     return (
       <main
-        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] pb-32 ${theme === "dark" ? "dark" : ""}`}
+        className={`min-h-screen bg-[var(--bg)] text-[var(--text)] pb-48 ${theme === "dark" ? "dark" : ""}`}
       >
         <AppBar
           title={en.appName}
@@ -349,13 +561,36 @@ export function DispatchScreen() {
                 </span>
               )}
               <ConfidenceTag level={CONFIDENCE_MAP[selectedHospital.confidence]} />
+              {selectedHospital.isDiverted && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--danger-text)]/30 bg-[var(--danger-surface)] px-2.5 py-0.5 text-xs font-bold text-[var(--danger-text)]">
+                  <Siren className="h-3.5 w-3.5 animate-pulse" />
+                  {en.divertedBadge}
+                </span>
+              )}
+              {selectedHospital.reliability && selectedHospital.reliability.totalFeedback >= 2 && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${
+                    selectedHospital.reliability.accuracyRate >= 80
+                      ? "bg-[var(--ok-surface)] text-[var(--ok-text)]"
+                      : "bg-[var(--warn-surface)] text-[var(--warn-text)]"
+                  }`}
+                >
+                  {selectedHospital.reliability.accuracyRate}% {en.arrivalAccuracy}
+                </span>
+              )}
             </div>
+            {selectedHospital.isDiverted && (
+              <div className="mt-2.5 rounded-lg border border-[var(--danger-text)]/30 bg-[var(--danger-surface)] p-2 text-xs font-semibold text-[var(--danger-text)]">
+                ⚠️ {en.diversionActiveNotice}
+              </div>
+            )}
             {(selectedHospital.isGovt || selectedHospital.schemes.length > 0) && (
               <p className="mt-1.5 text-xs font-semibold text-[var(--text-2)]">
                 {selectedHospital.isGovt ? "Govt" : "Private"}
                 {selectedHospital.schemes.length > 0 ? ` · ${selectedHospital.schemes.join(", ")}` : ""}
               </p>
             )}
+
 
             <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
               <div>
@@ -437,7 +672,7 @@ export function DispatchScreen() {
               className="inline-flex min-h-[64px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-6 text-base font-bold text-[var(--accent-text-on)] shadow-clinical transition-transform active:scale-[0.99] disabled:opacity-50"
             >
               <Check className="h-6 w-6" aria-hidden="true" strokeWidth={2.5} />
-              <span>{en.sendBedRequest}</span>
+              <span className="truncate">{en.sendBedRequest} · {selectedHospital.name}</span>
             </button>
             <p className="text-center text-xs text-[var(--text-2)]">{en.requestDisclaimer}</p>
           </div>
@@ -450,6 +685,8 @@ export function DispatchScreen() {
   /* 3. Sent: waiting for hospital response                                     */
   /* -------------------------------------------------------------------------- */
   if (state === "sent") {
+    const rejectedOffers =
+      requestSummary?.offers.filter((o) => o.status === "rejected" || o.status === "expired") ?? [];
     const waitingFor =
       pendingOffer?.hospitalName ??
       requestSummary?.offers[requestSummary.offers.length - 1]?.hospitalName ??
@@ -484,6 +721,38 @@ export function DispatchScreen() {
             They have {Math.floor(total / 60)} min {total % 60} sec to respond.
           </p>
 
+          {/* Offer Escalation Status Card (shows if earlier hospital rejected or expired) */}
+          {rejectedOffers.length > 0 && (
+            <div className="mt-4 w-full rounded-xl border border-[var(--warn-text)]/30 bg-[var(--warn-surface)] p-3 text-left shadow-xs">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--warn-text)]">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>Offer Escalation History</span>
+              </div>
+              <div className="mt-2 flex flex-col gap-1.5 text-xs">
+                {rejectedOffers.map((ro) => (
+                  <div
+                    key={ro.offerId}
+                    className="flex items-center justify-between border-b border-[var(--border)]/40 pb-1 last:border-0 last:pb-0"
+                  >
+                    <span className="font-medium text-[var(--text-2)] line-through">
+                      {ro.hospitalName}
+                    </span>
+                    <span className="font-bold text-[var(--danger-text)]">
+                      {ro.status === "rejected"
+                        ? ro.rejectReason
+                          ? `Declined (${ro.rejectReason.replace(/_/g, " ")})`
+                          : "Declined"
+                        : "Timed out"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2.5 text-xs font-semibold text-[var(--text)]">
+                ➡️ Request now routed to <strong className="font-bold text-[var(--accent)]">{waitingFor}</strong>. Waiting for hospital response.
+              </p>
+            </div>
+          )}
+
           <div className="mt-6">
             <CountdownRing
               totalSeconds={total}
@@ -515,7 +784,10 @@ export function DispatchScreen() {
   /* -------------------------------------------------------------------------- */
   if (state === "confirmed") {
     const hospitalName =
-      requestSummary?.offers.find((o) => o.status === "accepted")?.hospitalName ?? "";
+      requestSummary?.offers.find((o) => o.status === "accepted")?.hospitalName ??
+      requestSummary?.offers[0]?.hospitalName ??
+      selectedHospital?.name ??
+      "";
 
     return (
       <main

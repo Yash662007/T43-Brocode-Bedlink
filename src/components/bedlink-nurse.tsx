@@ -9,6 +9,8 @@ import {
   Droplets,
   HeartPulse,
   History,
+  Mic,
+  MicOff,
   Minus,
   PenLine,
   Plus,
@@ -17,6 +19,7 @@ import {
   Wind,
   X,
 } from "lucide-react";
+
 import type { BedRow, BedType } from "@/lib/bedlink-fixtures";
 import { reviewBedAvailabilityNote } from "@/lib/bed-update-extraction.functions";
 import {
@@ -94,6 +97,63 @@ export function NurseScreen() {
   const [suggestedUpdates, setSuggestedUpdates] = useState<
     Array<{ bedType: BedType; free: number; availability: "available" | "unavailable" }>
   >([]);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceUnsupported, setVoiceUnsupported] = useState(false);
+
+  const toggleDictation = () => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setVoiceUnsupported(true);
+      return;
+    }
+
+    if (isListening) {
+      try {
+        (window as any)._bedlinkSpeechRecognition?.stop();
+      } catch {}
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceUnsupported(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0].transcript)
+          .join("");
+        if (transcript) {
+          setNote(transcript);
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      (window as any)._bedlinkSpeechRecognition = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      setVoiceUnsupported(true);
+    }
+  };
+
 
   // History timeline view state
   const [showHistory, setShowHistory] = useState(false);
@@ -177,16 +237,30 @@ export function NurseScreen() {
         const previous = baseline.find((b) => b.bedType === row.bedType);
         return !previous || previous.free !== row.free;
       });
-      await Promise.all(
-        changed.map((row) =>
-          apiUpdateBed(NURSE_TOKEN, {
-            bedType: row.bedType,
-            value: row.free,
-            actor: nurseName.trim() || en.defaultNurseName,
-            ...(isRestore ? { isRestore: true } : {}),
-          }),
-        ),
-      );
+
+      if (changed.length === 0) {
+        // Nurse confirmed current counts without changes: refresh freshness & log nurse_confirmed
+        await Promise.all(
+          nextBeds.map((row) =>
+            apiUpdateBed(NURSE_TOKEN, {
+              bedType: row.bedType,
+              stillCorrect: true,
+              actor: nurseName.trim() || en.defaultNurseName,
+            }),
+          ),
+        );
+      } else {
+        await Promise.all(
+          changed.map((row) =>
+            apiUpdateBed(NURSE_TOKEN, {
+              bedType: row.bedType,
+              value: row.free,
+              actor: nurseName.trim() || en.defaultNurseName,
+              ...(isRestore ? { isRestore: true } : {}),
+            }),
+          ),
+        );
+      }
       return nextBeds;
     },
     onSuccess: (nextBeds) => {
@@ -696,7 +770,37 @@ export function NurseScreen() {
                   </button>
                 </div>
 
-                <p className="mt-2 text-sm text-[var(--text-2)]">{en.aiUpdateHint}</p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <p className="text-sm text-[var(--text-2)]">{en.aiUpdateHint}</p>
+                  <button
+                    type="button"
+                    onClick={toggleDictation}
+                    className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+                      isListening
+                        ? "animate-pulse border border-[var(--danger-text)] bg-[var(--danger-surface)] text-[var(--danger-text)]"
+                        : "border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--border)]"
+                    }`}
+                    aria-label={isListening ? en.voiceStop : en.voiceDictation}
+                  >
+                    {isListening ? (
+                      <>
+                        <MicOff className="h-4 w-4" aria-hidden="true" />
+                        <span>{en.voiceListening}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="h-4 w-4" aria-hidden="true" />
+                        <span>{en.voiceDictation}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {voiceUnsupported && (
+                  <p className="mt-1 text-xs text-[var(--warn-text)]">
+                    {en.voiceUnsupported}
+                  </p>
+                )}
 
                 <textarea
                   value={note}
@@ -705,6 +809,7 @@ export function NurseScreen() {
                   rows={3}
                   className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text)] placeholder:text-[var(--text-2)] focus:outline-none"
                 />
+
 
                 <div className="mt-4 flex justify-end gap-2">
                   <button

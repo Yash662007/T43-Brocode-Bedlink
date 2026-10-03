@@ -49,6 +49,19 @@ export type SpecialistStatusDto = {
   updatedAt: string | null;
 };
 
+export type HospitalDiversionDto = {
+  isDiverted: boolean;
+  reason?: string;
+  divertedUntil?: string;
+  updatedAt: string;
+};
+
+export type HospitalReliabilityDto = {
+  totalFeedback: number;
+  confirmedCount: number;
+  accuracyRate: number;
+};
+
 export type HospitalDto = {
   id: string;
   name: string;
@@ -59,7 +72,10 @@ export type HospitalDto = {
   capabilities: string[];
   beds: BedSnapshotDto[];
   specialists: SpecialistStatusDto[];
+  diversion?: HospitalDiversionDto;
+  reliability?: HospitalReliabilityDto;
 };
+
 
 export function getHospitals() {
   return request<{ hospitals: HospitalDto[] }>("/api/hospitals");
@@ -119,6 +135,18 @@ export function listConditions() {
 
 export type Confidence = "likely" | "uncertain" | "probably_full" | "unknown";
 
+export type PatientTelemetryDto = {
+  age?: number;
+  gender?: "M" | "F" | "Other";
+  heartRate?: number;
+  bpSys?: number;
+  bpDia?: number;
+  spo2?: number;
+  gcs?: number;
+  acuity?: "red" | "yellow" | "green";
+  notes?: string;
+};
+
 export type RankedHospitalDto = {
   hospitalId: string;
   name: string;
@@ -139,6 +167,9 @@ export type RankedHospitalDto = {
   pAvailable: number;
   scoreBreakdown: { travelMin: number; availabilityPenalty: number; loadPenalty: number };
   score: number;
+  isDiverted?: boolean;
+  diversionReason?: string;
+  reliability?: HospitalReliabilityDto;
 };
 
 export function rankDispatch(body: { condition: string; lat: number; lng: number }) {
@@ -165,6 +196,7 @@ export type OfferDto = {
   status: OfferStatus;
   sentAt: string;
   respondsBy: string;
+  telemetry?: PatientTelemetryDto;
 };
 
 export type HoldDto = {
@@ -190,6 +222,7 @@ export type RequestSummaryDto = {
     status: RequestStatus;
     created_at: string;
     updated_at: string;
+    telemetry?: PatientTelemetryDto;
   };
   offers: OfferDto[];
   holds: HoldDto[];
@@ -200,6 +233,8 @@ export function createRequest(body: {
   lat: number;
   lng: number;
   mode: RequestMode;
+  telemetry?: PatientTelemetryDto;
+  preferredHospitalId?: string;
 }) {
   return request<RequestSummaryDto>("/api/requests", {
     method: "POST",
@@ -244,3 +279,55 @@ export function rejectOffer(offerId: string, reason?: string) {
 export function releaseHold(holdId: string) {
   return request<{ ok: true }>(`/api/holds/${holdId}/release`, { method: "POST" });
 }
+
+export function setHospitalDiversion(
+  hospitalId: string,
+  body: { isDiverted: boolean; reason?: string; durationMinutes?: number },
+) {
+  return request<{ diversion: HospitalDiversionDto }>(`/api/hospitals/${hospitalId}/diversion`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearHospitalDiversion(hospitalId: string) {
+  return request<{ diversion: HospitalDiversionDto }>(`/api/hospitals/${hospitalId}/diversion`, {
+    method: "DELETE",
+  });
+}
+
+export type RegionalAnalyticsDto = {
+  overview: {
+    totalHospitals: number;
+    divertedHospitals: number;
+    totalBedsReported: number;
+    totalActiveHolds: number;
+    totalNetAvailable: number;
+    recentArrivals: number;
+    averageReliability: number;
+  };
+  bedBreakdown: Record<BedType, { reported: number; activeHolds: number; netAvailable: number }>;
+  hospitals: Array<
+    HospitalDto & {
+      diversion?: HospitalDiversionDto;
+      reliability?: HospitalReliabilityDto;
+      activeHoldsCount: number;
+    }
+  >;
+  recentEvents: Array<{
+    id: number;
+    hospitalId: string;
+    hospitalName: string;
+    bedType: BedType;
+    eventType: string;
+    source: string;
+    actor: string | null;
+    note: string | null;
+    createdAt: string;
+  }>;
+};
+
+export function getRegionalAnalytics() {
+  return request<RegionalAnalyticsDto>("/api/analytics");
+}
+

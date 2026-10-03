@@ -392,7 +392,7 @@ export interface BottomActionBarProps {
 
 export function BottomActionBar({ children }: BottomActionBarProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-[var(--border)] bg-[var(--surface)]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-clinical backdrop-blur-xs">
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-clinical backdrop-blur-xs">
       <div className="mx-auto flex max-w-lg items-center justify-center">{children}</div>
     </div>
   );

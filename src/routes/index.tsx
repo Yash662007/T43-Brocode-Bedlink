@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { DispatchScreen } from "@/components/bedlink-dispatch";
 import { HospitalScreen } from "@/components/bedlink-hospital";
 import { NurseScreen } from "@/components/bedlink-nurse";
+import { CommandScreen } from "@/components/bedlink-command";
 import en from "@/locales/en.json";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +27,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type ScreenRole = "nurse" | "hospital" | "ambulance";
+type ScreenRole = "nurse" | "hospital" | "ambulance" | "command";
 
 function Index() {
   const [activeScreen, setActiveScreen] = useState<ScreenRole>("nurse");
@@ -35,9 +36,10 @@ function Index() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const role = params.get("role") || params.get("screen");
-      if (role === "nurse" || role === "hospital" || role === "ambulance") {
+      if (role === "nurse" || role === "hospital" || role === "ambulance" || role === "command") {
         setActiveScreen(role);
       }
+
       const themeParam = params.get("theme");
       if (themeParam === "dark") {
         document.documentElement.classList.add("dark");
@@ -97,6 +99,18 @@ function Index() {
             >
               {en.ambulanceRole}
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveScreen("command")}
+              aria-pressed={activeScreen === "command"}
+              className={`inline-flex min-h-[48px] items-center justify-center rounded-lg px-4 text-sm font-bold transition-all ${
+                activeScreen === "command"
+                  ? "border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)] shadow-xs"
+                  : "text-[var(--text-2)] hover:text-[var(--text)]"
+              }`}
+            >
+              {en.commandRole}
+            </button>
           </div>
         </div>
       </nav>
@@ -113,6 +127,10 @@ function Index() {
       <div className={activeScreen === "ambulance" ? "" : "hidden"}>
         <DispatchScreen />
       </div>
+      <div className={activeScreen === "command" ? "" : "hidden"}>
+        <CommandScreen />
+      </div>
     </div>
   );
 }
+

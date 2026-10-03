@@ -17,6 +17,7 @@ export function startTicker() {
 function tick() {
   void expireOffers();
   expireHolds();
+  expireDiversions();
   broadcastCountdowns();
 }
 
@@ -24,17 +25,38 @@ function tick() {
 export async function runTickOnceForTests() {
   await expireOffers();
   expireHolds();
+  expireDiversions();
 }
+
+export function expireDiversions() {
+  const now = nowIso();
+  const expired = db
+    .prepare(
+      `SELECT hospital_id FROM hospital_diversions WHERE is_diverted = 1 AND diverted_until IS NOT NULL AND diverted_until <= ?`,
+    )
+    .all(now) as Array<{ hospital_id: string }>;
+
+  if (expired.length === 0) return;
+
+  db.prepare(
+    `UPDATE hospital_diversions SET is_diverted = 0, updated_at = ? WHERE is_diverted = 1 AND diverted_until IS NOT NULL AND diverted_until <= ?`,
+  ).run(now, now);
+
+  for (const row of expired) {
+    broadcast("diversion", { hospitalId: row.hospital_id, isDiverted: false });
+  }
+}
+
 
 export async function expireOffers() {
   const now = nowIso();
   const timedOut = db
     .prepare(
-      `SELECT o.id, o.request_id, r.mode FROM offers o
+      `SELECT o.id, o.request_id, o.hospital_id, r.mode FROM offers o
        JOIN requests r ON r.id = o.request_id
        WHERE o.status = 'pending' AND o.responds_by <= ?`,
     )
-    .all(now) as PendingOfferRow[];
+    .all(now) as Array<{ id: string; request_id: string; hospital_id: string; mode: string }>;
 
   if (timedOut.length === 0) return;
 
@@ -45,7 +67,12 @@ export async function expireOffers() {
   for (const offer of timedOut) {
     update.run(now, offer.id);
     affectedRequestIds.add(offer.request_id);
-    broadcast("offer", { offerId: offer.id, requestId: offer.request_id, status: "expired" });
+    broadcast("offer", {
+      offerId: offer.id,
+      requestId: offer.request_id,
+      hospitalId: offer.hospital_id,
+      status: "expired",
+    });
   }
 
   for (const requestId of affectedRequestIds) {

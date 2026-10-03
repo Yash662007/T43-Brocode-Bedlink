@@ -105,3 +105,26 @@ CREATE TABLE IF NOT EXISTS telegram_links (
   token TEXT NOT NULL,
   linked_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS hospital_diversions (
+  hospital_id TEXT PRIMARY KEY REFERENCES hospitals(id),
+  is_diverted INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  diverted_until TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS request_telemetry (
+  request_id TEXT PRIMARY KEY REFERENCES requests(id),
+  age INTEGER,
+  gender TEXT,
+  heart_rate INTEGER,
+  bp_sys INTEGER,
+  bp_dia INTEGER,
+  spo2 INTEGER,
+  gcs INTEGER,
+  acuity TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
+

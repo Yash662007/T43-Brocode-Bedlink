@@ -183,8 +183,19 @@ export function HospitalIncomingMap({
       }
     });
 
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      });
+      ro.observe(containerRef.current);
+    }
+
     return () => {
       cancelled = true;
+      ro?.disconnect();
       if (mapRef.current) {
         try {
           mapRef.current.remove();
@@ -207,7 +218,7 @@ export function HospitalIncomingMap({
   }
 
   return (
-    <div className="relative h-36 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-xs">
+    <div className="isolate relative z-0 h-36 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-xs">
       {loading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--surface-2)]">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
@@ -334,8 +345,19 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
       }
     });
 
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      });
+      ro.observe(containerRef.current);
+    }
+
     return () => {
       cancelled = true;
+      ro?.disconnect();
       if (mapRef.current) {
         try {
           mapRef.current.remove();
@@ -352,7 +374,7 @@ export function DispatchStepAMap({ onLocationSelect }: DispatchStepAMapProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative h-48 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-clinical">
+      <div className="isolate relative z-0 h-48 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-clinical">
         <div ref={containerRef} className="h-full w-full leaflet-clinical-container" />
         <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/95 px-2.5 py-1 text-xs font-semibold text-[var(--text)] shadow-xs backdrop-blur-xs">
           <MapPin className="h-3.5 w-3.5 text-[var(--accent)]" />
@@ -483,8 +505,19 @@ export function DispatchComparisonMap({
       }
     });
 
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      });
+      ro.observe(containerRef.current);
+    }
+
     return () => {
       cancelled = true;
+      ro?.disconnect();
       if (mapRef.current) {
         try {
           mapRef.current.remove();
@@ -510,7 +543,7 @@ export function DispatchComparisonMap({
   }, [hospitals, selectedIndex]);
 
   return (
-    <div className="relative h-[220px] sm:h-[260px] w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-clinical">
+    <div className="isolate relative z-0 h-[220px] sm:h-[260px] w-full overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-clinical">
       <div ref={containerRef} className="h-full w-full leaflet-clinical-container" />
       <div className="absolute top-2 left-2 z-10 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]/95 px-3 py-1.5 text-xs font-semibold text-[var(--text)] shadow-xs backdrop-blur-xs">
         <span>

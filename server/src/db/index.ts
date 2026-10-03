@@ -19,3 +19,6 @@ export function runMigrations() {
   const schema = readFileSync(join(here, "schema.sql"), "utf-8");
   db.exec(schema);
 }
+
+runMigrations();
+

@@ -2,10 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   BedDouble,
   Check,
   Clock3,
   HeartPulse,
+  Siren,
   Wifi,
   Wind,
   X,
@@ -22,9 +24,19 @@ import {
   useClinicalTheme,
 } from "./clinical/shared-components";
 import { HospitalIncomingMap } from "./clinical/clinical-map";
-import { acceptOffer, getHospitals, rejectOffer, releaseHold, type OfferDto } from "@/lib/bedlink-client";
+import {
+  acceptOffer,
+  clearHospitalDiversion,
+  getHospitals,
+  rejectOffer,
+  releaseHold,
+  setHospitalDiversion,
+  type HospitalDiversionDto,
+  type OfferDto,
+} from "@/lib/bedlink-client";
 import { subscribeToBedlinkStream } from "@/lib/bedlink-stream";
 import { DEMO_CONDITIONS, DEMO_HOSPITAL_ID } from "@/lib/bedlink-demo-config";
+
 
 type OfferState = "idle" | "incoming" | "held" | "superseded" | "expired";
 
@@ -63,6 +75,15 @@ export function HospitalScreen() {
     return true;
   });
 
+  const [hospitalId, setHospitalId] = useState(DEMO_HOSPITAL_ID);
+  const hospitalIdRef = React.useRef(hospitalId);
+  hospitalIdRef.current = hospitalId;
+
+  const [diversion, setDiversion] = useState<HospitalDiversionDto | null>(null);
+  const [diversionModalOpen, setDiversionModalOpen] = useState(false);
+  const [selectedDiversionReason, setSelectedDiversionReason] = useState(en.reasonOvercrowded);
+  const [selectedDiversionDuration, setSelectedDiversionDuration] = useState(60);
+
   const { data: hospitalsData } = useQuery({
     queryKey: ["hospitals"],
     queryFn: () => getHospitals(),
@@ -72,11 +93,18 @@ export function HospitalScreen() {
     Array<{ bedType: BedType; free: number; updatedAt: string; isSimulated: boolean }> | null
   >(null);
 
+  const currentHospital =
+    hospitalsData?.hospitals.find((h) => h.id === hospitalId) ?? hospitalsData?.hospitals[0];
+
   useEffect(() => {
-    const hospital = hospitalsData?.hospitals.find((h) => h.id === DEMO_HOSPITAL_ID);
-    if (hospital) {
+    if (currentHospital) {
+      if (currentHospital.diversion) {
+        setDiversion(currentHospital.diversion);
+      } else {
+        setDiversion(null);
+      }
       setLiveBeds(
-        hospital.beds.map((b) => ({
+        currentHospital.beds.map((b) => ({
           bedType: b.bedType,
           free: b.effectiveFree,
           updatedAt: b.freshness,
@@ -84,14 +112,27 @@ export function HospitalScreen() {
         })),
       );
     }
-  }, [hospitalsData]);
+  }, [currentHospital]);
+
+  const offerRef = React.useRef<OfferDto | null>(null);
+  offerRef.current = offer;
 
   // Live offer/hold events addressed to this hospital, and countdowns.
   useEffect(() => {
     const unsubscribe = subscribeToBedlinkStream({
+      onDiversion: (div) => {
+        if (div.hospitalId !== hospitalIdRef.current) return;
+        setDiversion({
+          isDiverted: div.isDiverted,
+          reason: div.reason,
+          divertedUntil: div.divertedUntil,
+          updatedAt: new Date().toISOString(),
+        });
+      },
       onOffer: (incoming) => {
-        if (incoming.hospitalId !== DEMO_HOSPITAL_ID) return;
         if (incoming.status === "pending") {
+          // Auto-select this hospital so the desk user immediately sees the incoming request
+          setHospitalId(incoming.hospitalId);
           setOffer(incoming);
           setState("incoming");
           const total = Math.round(
@@ -100,23 +141,39 @@ export function HospitalScreen() {
           setRemainingSeconds(Math.max(0, total));
           return;
         }
+        if (incoming.hospitalId && incoming.hospitalId !== hospitalIdRef.current) return;
         setOffer((current) => (current?.offerId === incoming.offerId ? incoming : current));
-        if (incoming.offerId !== offer?.offerId) return;
-        if (incoming.status === "superseded") setState("superseded");
-        if (incoming.status === "expired") setState("expired");
+
+        if (incoming.offerId === offerRef.current?.offerId || !offerRef.current) {
+          if (incoming.status === "superseded") setState("superseded");
+          if (incoming.status === "expired") setState("expired");
+        }
       },
       onHold: (hold) => {
-        if (hold.hospitalId !== DEMO_HOSPITAL_ID) return;
+        if (hold.hospitalId !== hospitalIdRef.current) return;
         if (hold.status === "active") {
           setState("held");
-        } else if (hold.status === "released" || hold.status === "expired") {
+        } else if (
+          hold.status === "released" ||
+          hold.status === "expired" ||
+          hold.status === "consumed"
+        ) {
           setHoldId(null);
           setState("idle");
           setOffer(null);
         }
       },
+      onOutcome: (outcome) => {
+        if (offerRef.current && outcome.requestId === offerRef.current.requestId) {
+          if (outcome.status === "cancelled" || outcome.status === "arrived") {
+            setHoldId(null);
+            setState("idle");
+            setOffer(null);
+          }
+        }
+      },
       onBedChange: (change) => {
-        if (change.hospitalId !== DEMO_HOSPITAL_ID) return;
+        if (change.hospitalId !== hospitalIdRef.current) return;
         setLiveBeds((current) =>
           current?.map((row) =>
             row.bedType === change.bedType
@@ -126,15 +183,15 @@ export function HospitalScreen() {
         );
       },
       onTick: (tick) => {
-        if (offer) {
-          const mine = tick.offers.find((o) => o.offerId === offer.offerId);
+        const currentOffer = offerRef.current;
+        if (currentOffer) {
+          const mine = tick.offers.find((o) => o.offerId === currentOffer.offerId);
           if (mine) setRemainingSeconds(mine.remainingSeconds);
         }
       },
     });
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offer?.offerId]);
+  }, []);
 
   const handleAccept = async () => {
     if (!offer) return;
@@ -164,6 +221,298 @@ export function HospitalScreen() {
     setHoldId(null);
   };
 
+  const handleDeclareDiversion = async () => {
+    try {
+      const res = await setHospitalDiversion(hospitalId, {
+        isDiverted: true,
+        reason: selectedDiversionReason,
+        durationMinutes: selectedDiversionDuration,
+      });
+      setDiversion(res.diversion);
+      setDiversionModalOpen(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleResumeIntake = async () => {
+    try {
+      const res = await clearHospitalDiversion(hospitalId);
+      setDiversion(res.diversion);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const renderDiversionBanner = () => {
+    if (!diversion?.isDiverted) return null;
+    const untilText = diversion.divertedUntil
+      ? new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
+          new Date(diversion.divertedUntil),
+        )
+      : "";
+    return (
+      <div className="border-b border-[var(--danger-text)]/30 bg-[var(--danger-surface)] px-4 py-2.5 text-sm text-[var(--danger-text)]">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Siren className="h-5 w-5 animate-pulse shrink-0" aria-hidden="true" />
+            <div>
+              <strong className="font-bold uppercase tracking-wider">{en.edDiverted}</strong>
+              {diversion.reason && <span className="ml-1.5 font-medium">({diversion.reason})</span>}
+              {untilText && (
+                <span className="ml-1 text-xs opacity-90 tabular-nums">
+                  · {en.diversionUntil.replace("{time}", untilText)}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleResumeIntake}
+            className="inline-flex min-h-[36px] items-center rounded-lg bg-[var(--danger-text)] px-3 text-xs font-bold text-white shadow-xs hover:opacity-90 active:scale-95"
+          >
+            {en.resumeIntake}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDiversionModal = () => {
+    if (!diversionModalOpen) return null;
+    const reasonOptions = [
+      en.reasonOvercrowded,
+      en.reasonCathLabDown,
+      en.reasonTraumaFull,
+      en.reasonCTDown,
+    ];
+    const durationOptions = [30, 60, 120];
+
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diversion-dialog-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+      >
+        <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
+          <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+            <div className="flex items-center gap-2">
+              <Siren className="h-5 w-5 text-[var(--danger-text)]" />
+              <h2 id="diversion-dialog-title" className="text-base font-bold text-[var(--text)]">
+                {en.declareDiversion}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDiversionModalOpen(false)}
+              className="rounded-lg p-1 text-[var(--text-2)] hover:text-[var(--text)]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <p className="mt-3 text-xs text-[var(--text-2)]">{en.diversionActiveNotice}</p>
+
+          <div className="mt-4 flex flex-col gap-3">
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-2)]">
+                {en.diversionReasonLabel}
+              </label>
+              <div className="mt-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {reasonOptions.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setSelectedDiversionReason(r)}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                      selectedDiversionReason === r
+                        ? "border-[var(--danger-text)] bg-[var(--danger-surface)] text-[var(--danger-text)]"
+                        : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-2)]">
+                {en.diversionDurationLabel}
+              </label>
+              <div className="mt-1 flex gap-2">
+                {durationOptions.map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => setSelectedDiversionDuration(mins)}
+                    className={`flex-1 rounded-lg border py-2 text-center text-xs font-bold transition-colors ${
+                      selectedDiversionDuration === mins
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                        : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    {en.diversionMinutes.replace("{minutes}", String(mins))}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setDiversionModalOpen(false)}
+              className="inline-flex min-h-[44px] items-center rounded-lg border border-[var(--border)] px-4 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
+            >
+              {en.aiCancel}
+            </button>
+            <button
+              type="button"
+              onClick={handleDeclareDiversion}
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-[var(--danger-text)] px-4 text-xs font-bold text-white shadow-xs hover:opacity-95"
+            >
+              {en.declareDiversion}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTelemetryCard = (telemetry?: OfferDto["telemetry"]) => {
+    if (!telemetry) return null;
+    return (
+      <div className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-left">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] pb-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text)]">
+            {en.incomingTelemetryTitle}
+          </span>
+          {telemetry.acuity && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                telemetry.acuity === "red"
+                  ? "bg-[var(--danger-surface)] text-[var(--danger-text)]"
+                  : telemetry.acuity === "yellow"
+                    ? "bg-[var(--warn-surface)] text-[var(--warn-text)]"
+                    : "bg-[var(--ok-surface)] text-[var(--ok-text)]"
+              }`}
+            >
+              {telemetry.acuity === "red"
+                ? en.acuityRed
+                : telemetry.acuity === "yellow"
+                  ? en.acuityYellow
+                  : en.acuityGreen}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          {telemetry.spo2 != null && (
+            <div className="flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center">
+              <span className="text-[10px] font-bold text-[var(--text-2)]">{en.spo2Label}</span>
+              <span
+                className={`text-sm font-extrabold ${
+                  telemetry.spo2 < 94 ? "text-[var(--danger-text)]" : "text-[var(--text)]"
+                }`}
+              >
+                {telemetry.spo2}%
+              </span>
+            </div>
+          )}
+          {telemetry.heartRate != null && (
+            <div className="flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center">
+              <span className="text-[10px] font-bold text-[var(--text-2)]">{en.heartRateLabel}</span>
+              <span className="text-sm font-extrabold text-[var(--text)]">
+                {telemetry.heartRate} bpm
+              </span>
+            </div>
+          )}
+          {telemetry.bpSys != null && (
+            <div className="flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center">
+              <span className="text-[10px] font-bold text-[var(--text-2)]">{en.bpLabel}</span>
+              <span className="text-sm font-extrabold text-[var(--text)]">
+                {telemetry.bpSys}/{telemetry.bpDia ?? "-"}
+              </span>
+            </div>
+          )}
+          {telemetry.gcs != null && (
+            <div className="flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-center">
+              <span className="text-[10px] font-bold text-[var(--text-2)]">{en.gcsLabel}</span>
+              <span className="text-sm font-extrabold text-[var(--text)]">
+                {telemetry.gcs}/15
+              </span>
+            </div>
+          )}
+        </div>
+
+        {(telemetry.age != null || telemetry.gender != null) && (
+          <div className="mt-1.5 text-xs text-[var(--text-2)]">
+            <span className="font-semibold text-[var(--text)]">
+              {[
+                telemetry.age != null ? `${telemetry.age} yrs` : null,
+                telemetry.gender != null
+                  ? telemetry.gender === "M"
+                    ? en.genderM
+                    : telemetry.gender === "F"
+                      ? en.genderF
+                      : en.genderOther
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+        )}
+
+        {telemetry.notes && (
+          <p className="mt-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] p-2 text-xs font-medium italic text-[var(--text)]">
+            "{telemetry.notes}"
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderHospitalHeader = () => (
+    <>
+      <AppBar
+        title={en.appName}
+        subtitle={`${en.hospital} · ${currentHospital?.name ?? en.hospitalUnit}`}
+        connectionState="live"
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+      <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-1.5 shadow-xs">
+        <div className="mx-auto flex max-w-md items-center justify-between gap-2 text-xs">
+          <span className="font-bold text-[var(--text-2)] uppercase tracking-wider text-[11px]">
+            Hospital Desk:
+          </span>
+          <select
+            value={hospitalId}
+            onChange={(e) => {
+              const newId = e.target.value;
+              setHospitalId(newId);
+              if (state !== "incoming" && state !== "held") {
+                setOffer(null);
+                setState("idle");
+              }
+            }}
+            aria-label="Select active hospital desk"
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs font-bold text-[var(--text)] shadow-xs focus:outline-none"
+          >
+            {hospitalsData?.hospitals.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </>
+  );
+
   /* -------------------------------------------------------------------------- */
   /* 1. Incoming Urgent Offer View (role="alert")                               */
   /* -------------------------------------------------------------------------- */
@@ -179,13 +528,9 @@ export function HospitalScreen() {
         role="alert"
         aria-labelledby="offer-title"
       >
-        <AppBar
-          title={en.appName}
-          subtitle={`${en.hospital} · ${en.hospitalUnit}`}
-          connectionState="live"
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
+        {renderHospitalHeader()}
+
+        {renderDiversionBanner()}
 
         <div className="mx-auto flex max-w-md flex-col px-4 pt-2 sm:px-6">
           {/* Top: Condition & Acuity Badge */}
@@ -212,7 +557,10 @@ export function HospitalScreen() {
                 {offer.etaMinutes != null ? Math.round(offer.etaMinutes) : "?"} min
               </strong>
             </p>
+
+            {renderTelemetryCard(offer.telemetry)}
           </div>
+
 
           {/* Collapsible Arrival Map Preview */}
           <div className="mt-2">
@@ -233,7 +581,14 @@ export function HospitalScreen() {
                 )}
               </button>
             </div>
-            {!mapCollapsed && <HospitalIncomingMap etaMinutes={offer?.etaMinutes ?? undefined} />}
+            {!mapCollapsed && (
+              <HospitalIncomingMap
+                etaMinutes={offer?.etaMinutes ?? undefined}
+                hospitalLat={currentHospital?.lat}
+                hospitalLng={currentHospital?.lng}
+                hospitalName={currentHospital?.name}
+              />
+            )}
           </div>
 
           {/* Circular Countdown Progress */}
@@ -313,15 +668,11 @@ export function HospitalScreen() {
       <main
         className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
       >
-        <AppBar
-          title={en.appName}
-          subtitle={`${en.hospital} · ${en.hospitalUnit}`}
-          connectionState="live"
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
+        {renderHospitalHeader()}
 
-        <div className="mx-auto flex max-w-md flex-col items-center px-4 pt-12 text-center sm:px-6">
+        {renderDiversionBanner()}
+
+        <div className="mx-auto flex max-w-md flex-col items-center px-4 pt-8 text-center sm:px-6">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--ok-surface)] text-[var(--ok-text)] shadow-clinical">
             <Check className="h-8 w-8" strokeWidth={3} />
           </div>
@@ -336,9 +687,17 @@ export function HospitalScreen() {
             {offer?.etaMinutes != null ? `ETA ${Math.round(offer.etaMinutes)} min` : en.bedHeldMessage}
           </p>
 
+          {renderTelemetryCard(offer?.telemetry)}
+
           <div className="mt-6 w-full">
-            <HospitalIncomingMap etaMinutes={offer?.etaMinutes ?? undefined} />
+            <HospitalIncomingMap
+              etaMinutes={offer?.etaMinutes ?? undefined}
+              hospitalLat={currentHospital?.lat}
+              hospitalLng={currentHospital?.lng}
+              hospitalName={currentHospital?.name}
+            />
           </div>
+
 
           <div className="mt-8 w-full max-w-xs">
             {releaseConfirm ? (
@@ -384,13 +743,7 @@ export function HospitalScreen() {
       <main
         className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
       >
-        <AppBar
-          title={en.appName}
-          subtitle={`${en.hospital} · ${en.hospitalUnit}`}
-          connectionState="live"
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
+        {renderHospitalHeader()}
 
         <div className="mx-auto flex max-w-md flex-col items-center px-4 pt-16 text-center sm:px-6">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--unknown-surface)] text-[var(--unknown-text)] shadow-clinical">
@@ -425,13 +778,7 @@ export function HospitalScreen() {
       <main
         className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
       >
-        <AppBar
-          title={en.appName}
-          subtitle={`${en.hospital} · ${en.hospitalUnit}`}
-          connectionState="live"
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
+        {renderHospitalHeader()}
 
         <div className="mx-auto flex max-w-md flex-col items-center px-4 pt-16 text-center sm:px-6">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--warn-surface)] text-[var(--warn-text)] shadow-clinical">
@@ -464,19 +811,41 @@ export function HospitalScreen() {
     <main
       className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${theme === "dark" ? "dark" : ""}`}
     >
-      <AppBar
-        title={en.appName}
-        subtitle={`${en.hospital} · ${en.hospitalUnit}`}
-        connectionState="live"
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+      {renderHospitalHeader()}
+
+      {renderDiversionBanner()}
+      {renderDiversionModal()}
 
       <div className="mx-auto max-w-lg px-4 pt-6 pb-12 sm:px-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{en.currentBeds}</h1>
-          <span className="text-xs font-semibold text-[var(--text-2)]">{en.hospital}</span>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{en.currentBeds}</h1>
+            <span className="text-xs font-semibold text-[var(--text-2)]">{en.hospital}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {diversion?.isDiverted ? (
+              <button
+                type="button"
+                onClick={handleResumeIntake}
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--danger-text)]/40 bg-[var(--danger-surface)] px-3 text-xs font-bold text-[var(--danger-text)] hover:opacity-90 active:scale-95"
+              >
+                <Siren className="h-3.5 w-3.5 animate-pulse" />
+                <span>{en.edDiverted}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDiversionModalOpen(true)}
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text)] shadow-xs hover:bg-[var(--surface-2)] active:scale-95"
+              >
+                <span className="h-2 w-2 rounded-full bg-[var(--ok-text)]" />
+                <span>{en.edOpen}</span>
+              </button>
+            )}
+          </div>
         </div>
+
 
         {/* Compact Bed Overview with FreshnessBadge */}
         <div className="mt-4 flex flex-col gap-2">

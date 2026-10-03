@@ -50,6 +50,46 @@ export type HoldRow = {
   released_at: string | null;
 };
 
+export type PatientTelemetry = {
+  age?: number;
+  gender?: "M" | "F" | "Other";
+  heartRate?: number;
+  bpSys?: number;
+  bpDia?: number;
+  spo2?: number;
+  gcs?: number;
+  acuity?: "red" | "yellow" | "green";
+  notes?: string;
+};
+
+export function getRequestTelemetry(requestId: string): PatientTelemetry | undefined {
+  const row = db.prepare(`SELECT * FROM request_telemetry WHERE request_id = ?`).get(requestId) as
+    | {
+        age: number | null;
+        gender: "M" | "F" | "Other" | null;
+        heart_rate: number | null;
+        bp_sys: number | null;
+        bp_dia: number | null;
+        spo2: number | null;
+        gcs: number | null;
+        acuity: "red" | "yellow" | "green" | null;
+        notes: string | null;
+      }
+    | undefined;
+  if (!row) return undefined;
+  return {
+    age: row.age ?? undefined,
+    gender: row.gender ?? undefined,
+    heartRate: row.heart_rate ?? undefined,
+    bpSys: row.bp_sys ?? undefined,
+    bpDia: row.bp_dia ?? undefined,
+    spo2: row.spo2 ?? undefined,
+    gcs: row.gcs ?? undefined,
+    acuity: row.acuity ?? undefined,
+    notes: row.notes ?? undefined,
+  };
+}
+
 function getRequest(id: string): RequestRow {
   const row = db.prepare(`SELECT * FROM requests WHERE id = ?`).get(id) as RequestRow | undefined;
   if (!row) throw notFound("Request not found.");
@@ -72,6 +112,7 @@ function offeredHospitalIds(requestId: string): string[] {
 function offerPublicPayload(offer: OfferRow) {
   const request = getRequest(offer.request_id);
   const hospital = getHospital(offer.hospital_id);
+  const telemetry = getRequestTelemetry(offer.request_id);
   return {
     offerId: offer.id,
     requestId: offer.request_id,
@@ -84,8 +125,10 @@ function offerPublicPayload(offer: OfferRow) {
     status: offer.status,
     sentAt: offer.sent_at,
     respondsBy: offer.responds_by,
+    telemetry,
   };
 }
+
 
 /**
  * Sends the next batch of offers for a request: 1 hospital in sequential
@@ -93,7 +136,7 @@ function offerPublicPayload(offer: OfferRow) {
  * hospitals already offered for this request, so repeated calls widen the
  * search instead of re-offering the same hospital.
  */
-export async function offerNextBatch(requestId: string): Promise<void> {
+export async function offerNextBatch(requestId: string, preferredHospitalId?: string): Promise<void> {
   const request = getRequest(requestId);
   if (["cancelled", "arrived", "expired"].includes(request.status)) return;
 
@@ -113,8 +156,17 @@ export async function offerNextBatch(requestId: string): Promise<void> {
     return;
   }
 
+  let ranked = [...result.ranked];
+  if (preferredHospitalId && !excludeHospitalIds.includes(preferredHospitalId)) {
+    const idx = ranked.findIndex((h) => h.hospitalId === preferredHospitalId);
+    if (idx > 0) {
+      const [fav] = ranked.splice(idx, 1);
+      ranked = [fav, ...ranked];
+    }
+  }
+
   const batchSize = request.mode === "sequential" ? 1 : rankingConfig.parallelOfferCount;
-  const batch = result.ranked.slice(0, batchSize);
+  const batch = ranked.slice(0, batchSize);
   const sentAt = nowIso();
   const respondsBy = new Date(
     Date.now() + rankingConfig.offerResponseSeconds * 1000,
@@ -158,6 +210,8 @@ export async function createRequest(params: {
   lat: number;
   lng: number;
   mode: RequestMode;
+  telemetry?: PatientTelemetry;
+  preferredHospitalId?: string;
 }) {
   const conditionEntry = resolveCondition(params.condition);
   if (!conditionEntry) throw notFound(`Unknown condition: ${params.condition}`);
@@ -177,20 +231,41 @@ export async function createRequest(params: {
     now,
   });
 
-  await offerNextBatch(id);
+  if (params.telemetry) {
+    db.prepare(
+      `INSERT INTO request_telemetry (request_id, age, gender, heart_rate, bp_sys, bp_dia, spo2, gcs, acuity, notes, created_at)
+       VALUES (@requestId, @age, @gender, @heartRate, @bpSys, @bpDia, @spo2, @gcs, @acuity, @notes, @createdAt)`,
+    ).run({
+      requestId: id,
+      age: params.telemetry.age ?? null,
+      gender: params.telemetry.gender ?? null,
+      heartRate: params.telemetry.heartRate ?? null,
+      bpSys: params.telemetry.bpSys ?? null,
+      bpDia: params.telemetry.bpDia ?? null,
+      spo2: params.telemetry.spo2 ?? null,
+      gcs: params.telemetry.gcs ?? null,
+      acuity: params.telemetry.acuity ?? null,
+      notes: params.telemetry.notes ?? null,
+      createdAt: now,
+    });
+  }
+
+  await offerNextBatch(id, params.preferredHospitalId);
   return getRequestSummary(id);
 }
 
 export function getRequestSummary(requestId: string) {
   const request = getRequest(requestId);
+  const telemetry = getRequestTelemetry(requestId);
   const offers = db
     .prepare(`SELECT * FROM offers WHERE request_id = ? ORDER BY sent_at, rank`)
     .all(requestId) as OfferRow[];
   const holds = db
     .prepare(`SELECT * FROM holds WHERE request_id = ? ORDER BY created_at`)
     .all(requestId) as HoldRow[];
-  return { request, offers: offers.map(offerPublicPayload), holds };
+  return { request: { ...request, telemetry }, offers: offers.map(offerPublicPayload), holds };
 }
+
 
 /** Attempts to accept a pending offer; rechecks availability and creates the hold atomically. */
 type AcceptResult =
@@ -301,6 +376,13 @@ export async function cancelRequest(requestId: string): Promise<void> {
   const request = getRequest(requestId);
   const now = nowIso();
 
+  const activeHolds = db
+    .prepare(`SELECT * FROM holds WHERE request_id = ? AND status = 'active'`)
+    .all(requestId) as HoldRow[];
+  const pendingOffers = db
+    .prepare(`SELECT * FROM offers WHERE request_id = ? AND status = 'pending'`)
+    .all(requestId) as OfferRow[];
+
   db.prepare(`UPDATE requests SET status = 'cancelled', updated_at = ? WHERE id = ?`).run(
     now,
     requestId,
@@ -311,6 +393,18 @@ export async function cancelRequest(requestId: string): Promise<void> {
   db.prepare(
     `UPDATE offers SET status = 'superseded', responded_at = ? WHERE request_id = ? AND status = 'pending'`,
   ).run(now, requestId);
+
+  for (const hold of activeHolds) {
+    broadcast("hold", {
+      holdId: hold.id,
+      requestId: hold.request_id,
+      hospitalId: hold.hospital_id,
+      status: "released",
+    });
+  }
+  for (const offer of pendingOffers) {
+    broadcast("offer", { ...offerPublicPayload(offer), status: "superseded" });
+  }
 
   broadcast("outcome", { requestId, status: "cancelled" });
   void request;
@@ -361,6 +455,12 @@ export function markArrived(requestId: string): void {
     note: `Arrival confirmed for request ${requestId}; estimated decrement pending nurse confirmation.`,
   });
 
+  broadcast("hold", {
+    holdId: hold.id,
+    requestId: hold.request_id,
+    hospitalId: hold.hospital_id,
+    status: "consumed",
+  });
   broadcast("outcome", { requestId, status: "arrived" });
   void request;
 }

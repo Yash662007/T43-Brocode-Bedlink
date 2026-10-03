@@ -10,6 +10,7 @@ import { offersRouter } from "./routes/offers.js";
 import { holdsRouter } from "./routes/holds.js";
 import { streamRouter } from "./routes/stream.js";
 import { specialistsRouter } from "./routes/specialists.js";
+import { analyticsRouter } from "./routes/analytics.js";
 import { HttpError } from "./lib/errors.js";
 
 export function createApp() {
@@ -28,6 +29,8 @@ export function createApp() {
   app.use(holdsRouter);
   app.use(streamRouter);
   app.use(specialistsRouter);
+  app.use(analyticsRouter);
+
 
   const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     if (err instanceof HttpError) {
